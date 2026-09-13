@@ -72,3 +72,55 @@ def render_markdown(report: Report) -> str:
                 lines.pop()
             lines.append("")
     return "\n".join(lines).rstrip() + "\n"
+
+
+SPARKS = "▁▂▃▄▅▆▇█"
+
+
+def sparkline(values: list[int], width: int = 60) -> str:
+    if not values:
+        return ""
+    step = max(1, -(-len(values) // width))
+    points = [max(values[i : i + step]) for i in range(0, len(values), step)]
+    top = max(points) or 1
+    return "".join(SPARKS[min(len(SPARKS) - 1, v * len(SPARKS) // (top + 1))] for v in points)
+
+
+def render_danmaku_markdown(report) -> str:
+    from echo_voc.analyzer_danmaku import mmss
+
+    spark = sparkline(report.histogram)
+    axis_start, axis_end = "00:00", mmss(report.duration_s * 1000)
+    lines = [
+        f"# Danmaku report: {report.title or report.url}",
+        "",
+        f"- **Danmaku analyzed:** {report.total}",
+        f"- **Video length:** {mmss(report.duration_s * 1000)}",
+        "",
+        "## Density timeline",
+        "",
+        f"`{spark}`",
+        f"`{axis_start}{axis_end.rjust(max(len(spark) - len(axis_start), len(axis_end) + 1))}`",
+        "",
+    ]
+    if report.hotspots:
+        lines += [
+            "## Hotspots",
+            "",
+            "| Time | Danmaku | Type | What's happening | Top danmaku |",
+            "| --- | --- | --- | --- | --- |",
+        ]
+        for h in report.hotspots:
+            time = f"{mmss(h.start_ms)}–{mmss(h.end_ms)}"
+            if report.url:
+                time = f"[{time}]({report.url}?t={h.start_ms // 1000})"
+            examples = " / ".join(e.replace("|", "\\|") for e in h.examples[:3])
+            summary = (h.summary or "").replace("|", "\\|")
+            lines.append(
+                f"| {time} | {h.count} (×{h.ratio}) | {h.label or '-'} | {summary} | {examples} |"
+            )
+        lines.append("")
+    if report.overall:
+        overall = render_markdown(report.overall).split("\n", 1)[1]  # drop the H1
+        lines += ["## Overall", overall]
+    return "\n".join(lines).rstrip() + "\n"

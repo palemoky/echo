@@ -29,4 +29,12 @@ def resolve_source(target: str, platform: str | None = None) -> Source:
     )
 
 
-__all__ = ["SOURCES", "Source", "resolve_source"]
+def detect_link(target: str) -> tuple[Source, str]:
+    """Return (source, "account" | "work") for an account or work URL."""
+    for cls in SOURCES.values():
+        if cls.matches_account(target):
+            return cls(), "account"
+    return resolve_source(target), "work"
+
+
+__all__ = ["SOURCES", "Source", "detect_link", "resolve_source"]

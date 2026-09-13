@@ -5,6 +5,7 @@ import json
 import logging
 import re
 from collections.abc import Callable
+from dataclasses import dataclass
 from typing import Any
 
 from pydantic import BaseModel, Field, ValidationError, field_validator
@@ -29,6 +30,7 @@ MAX_COMMENT_CHARS = 800
 BATCH_CHARS = 12_000
 BATCH_MAX_COMMENTS = 60
 EVIDENCE_PER_THEME = 3
+DEFAULT_LANGUAGE = "the same language as the majority of the comments"
 CATEGORY_ORDER = list(ThemeCategory)
 
 
@@ -119,11 +121,85 @@ def _format_comment(n: int, c: Comment) -> str:
 # ---- analyzer -------------------------------------------------------------------------------
 
 
+@dataclass
+class BatchExtraction:
+    """Per-batch map output, with model-assigned numbers resolved back to real comments."""
+
+    batch: list[Comment]
+    sentiments: list[Sentiment | None]  # aligned with ``batch``
+    drafts: list[tuple[_DraftTheme, list[Comment]]]
+
+
+async def ask_json(llm: LLM, system: str, user: str, schema: type[BaseModel], retries: int = 1):
+    """Ask for JSON matching ``schema``; on invalid output, retry once with the error attached."""
+    last_error: Exception | None = None
+    for attempt in range(retries + 1):
+        prompt = user
+        if last_error is not None:
+            prompt += f"\n\nYour previous reply was invalid ({last_error}). Return valid JSON only."
+        text = await llm.complete(system, prompt, json_mode=True)
+        try:
+            return schema.model_validate(parse_json(text))
+        except (json.JSONDecodeError, ValidationError) as e:
+            last_error = e
+            log.debug("Invalid LLM JSON (attempt %d): %s", attempt + 1, text[:500])
+    raise LLMError(f"Model returned invalid JSON after {retries + 1} attempts: {last_error}")
+
+
+async def extract_batch(llm: LLM, batch: list[Comment], language: str) -> BatchExtraction:
+    user = prompts.MAP_USER.format(
+        comments="\n".join(_format_comment(i, c) for i, c in enumerate(batch, 1))
+    )
+    system = prompts.MAP_SYSTEM.format(language=language)
+    result: _BatchResult = await ask_json(llm, system, user, _BatchResult)
+    sentiments: list[Sentiment | None] = [None] * len(batch)
+    for key, value in result.sentiments.items():
+        if key.isdigit() and 1 <= int(key) <= len(batch):
+            sentiments[int(key) - 1] = value
+    drafts = []
+    for theme in result.themes:
+        refs = [batch[n - 1] for n in dict.fromkeys(theme.comments) if 1 <= n <= len(batch)]
+        if refs:
+            drafts.append((theme, refs))
+    return BatchExtraction(batch, sentiments, drafts)
+
+
+async def extract_all(
+    llm: LLM,
+    comments: list[Comment],
+    language: str = DEFAULT_LANGUAGE,
+    concurrency: int = 4,
+    on_progress: Callable[[str], None] | None = None,
+) -> list[BatchExtraction]:
+    """Run the map step over all comments concurrently; failed batches are skipped."""
+    progress = on_progress or (lambda _msg: None)
+    batches = make_batches(comments)
+    sem = asyncio.Semaphore(concurrency)
+    done = 0
+
+    async def run(batch: list[Comment]) -> BatchExtraction | None:
+        nonlocal done
+        async with sem:
+            try:
+                result = await extract_batch(llm, batch, language)
+            except LLMError as e:
+                log.warning("Batch failed, skipping: %s", e)
+                result = None
+            done += 1
+            progress(f"Batch {done}/{len(batches)} done")
+            return result
+
+    results = await asyncio.gather(*(run(b) for b in batches))
+    if batches and all(r is None for r in results):
+        raise LLMError("All analysis batches failed; check the provider, model and API key")
+    return [r for r in results if r is not None]
+
+
 class Analyzer:
     def __init__(
         self,
         llm: LLM,
-        language: str = "the same language as the majority of the comments",
+        language: str = DEFAULT_LANGUAGE,
         concurrency: int = 4,
         on_progress: Callable[[str], None] | None = None,
     ) -> None:
@@ -137,40 +213,18 @@ class Analyzer:
         if not comments:
             raise ValueError("No non-empty comments to analyze")
 
-        batches = make_batches(comments)
-        self.on_progress(f"Analyzing {len(comments)} comments in {len(batches)} batch(es)")
-        sem = asyncio.Semaphore(self.concurrency)
-        done = 0
+        self.on_progress(f"Analyzing {len(comments)} comments")
+        extractions = await extract_all(
+            self.llm, comments, self.language, self.concurrency, self.on_progress
+        )
 
-        async def run(batch: list[Comment]) -> _BatchResult | None:
-            nonlocal done
-            async with sem:
-                try:
-                    result = await self._map(batch)
-                except LLMError as e:
-                    log.warning("Batch failed, skipping: %s", e)
-                    result = None
-                done += 1
-                self.on_progress(f"Batch {done}/{len(batches)} done")
-                return result
-
-        results = await asyncio.gather(*(run(b) for b in batches))
-        if all(r is None for r in results):
-            raise LLMError("All analysis batches failed; check the provider, model and API key")
-
-        # Map batch-local comment numbers back to real comments.
         sentiment = SentimentStats()
         drafts: list[tuple[_DraftTheme, list[Comment]]] = []
-        for batch, result in zip(batches, results, strict=True):
-            if result is None:
-                continue
-            for key, value in result.sentiments.items():
-                if key.isdigit() and 1 <= int(key) <= len(batch):
+        for extraction in extractions:
+            for value in extraction.sentiments:
+                if value is not None:
                     setattr(sentiment, value.value, getattr(sentiment, value.value) + 1)
-            for theme in result.themes:
-                refs = [batch[n - 1] for n in dict.fromkeys(theme.comments) if 1 <= n <= len(batch)]
-                if refs:
-                    drafts.append((theme, refs))
+            drafts.extend(extraction.drafts)
 
         ratings = [c.rating for c in comments if c.rating is not None]
         average_rating = round(sum(ratings) / len(ratings), 2) if ratings else None
@@ -190,13 +244,6 @@ class Analyzer:
             themes=self._build_themes(reduced, drafts),
             suggestions=reduced.suggestions,
         )
-
-    async def _map(self, batch: list[Comment]) -> _BatchResult:
-        user = prompts.MAP_USER.format(
-            comments="\n".join(_format_comment(i, c) for i, c in enumerate(batch, 1))
-        )
-        system = prompts.MAP_SYSTEM.format(language=self.language)
-        return await self._ask(system, user, _BatchResult)
 
     async def _reduce(
         self,
@@ -220,7 +267,7 @@ class Analyzer:
             rating=f"average rating {average_rating}/5" if average_rating else "no ratings",
             drafts="\n".join(lines) or "(none)",
         )
-        return await self._ask(system, user, _ReduceResult)
+        return await ask_json(self.llm, system, user, _ReduceResult)
 
     def _build_themes(
         self, reduced: _ReduceResult, drafts: list[tuple[_DraftTheme, list[Comment]]]
@@ -268,19 +315,3 @@ class Analyzer:
             key=lambda t: (CATEGORY_ORDER.index(t.category), -t.mentions, -(t.severity or 0))
         )
         return themes
-
-    async def _ask(self, system: str, user: str, schema: type[BaseModel], retries: int = 1):
-        last_error: Exception | None = None
-        for attempt in range(retries + 1):
-            prompt = user
-            if last_error is not None:
-                prompt += (
-                    f"\n\nYour previous reply was invalid ({last_error}). Return valid JSON only."
-                )
-            text = await self.llm.complete(system, prompt, json_mode=True)
-            try:
-                return schema.model_validate(parse_json(text))
-            except (json.JSONDecodeError, ValidationError) as e:
-                last_error = e
-                log.debug("Invalid LLM JSON (attempt %d): %s", attempt + 1, text[:500])
-        raise LLMError(f"Model returned invalid JSON after {retries + 1} attempts: {last_error}")

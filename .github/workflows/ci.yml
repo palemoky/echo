@@ -11,12 +11,24 @@ jobs:
     strategy:
       matrix:
         python-version: ["3.10", "3.13"]
+    services:
+      postgres:
+        image: pgvector/pgvector:pg17
+        env:
+          POSTGRES_USER: echo
+          POSTGRES_PASSWORD: echo
+          POSTGRES_DB: echo
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd "pg_isready -U echo -d echo"
+          --health-interval 5s --health-timeout 3s --health-retries 20
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
         with:
           python-version: ${{ matrix.python-version }}
-      - run: uv sync
+      - run: uv sync --all-extras
       - run: uv run ruff check src tests
       - run: uv run ruff format --check src tests
       - run: uv run pytest

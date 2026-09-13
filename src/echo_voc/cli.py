@@ -141,9 +141,9 @@ def analyze(
 @app.command()
 def sources() -> None:
     """List supported platforms."""
-    table = Table("platform", "description", "example")
+    table = Table("platform", "description", "work example", "account example")
     for s in SOURCES.values():
-        table.add_row(s.name, s.description, s.example)
+        table.add_row(s.name, s.description, s.example, s.account_example or "-")
     Console().print(table)
 
 
@@ -159,6 +159,11 @@ def providers() -> None:
             p.base_url or ("(set ECHO_BASE_URL)" if p.name == "custom" else "default"),
         )
     Console().print(table)
+
+
+from echo_voc import cli_store  # noqa: E402
+
+cli_store.register(app, _run)
 
 
 @app.command()

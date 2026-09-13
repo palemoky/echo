@@ -6,6 +6,45 @@ import pytest
 
 from echo_voc.llm.base import LLM
 from echo_voc.models import Comment, FetchResult
+from echo_voc.sources.base import Source
+from echo_voc.sources.bilibili import BilibiliSource
+
+
+@pytest.fixture(scope="session")
+def migrated_db():
+    from db_utils import TEST_DB, ensure_test_database
+
+    if not ensure_test_database():
+        pytest.skip("PostgreSQL not available (docker compose up -d)")
+    from echo_voc.store.db import migrate
+
+    migrate(TEST_DB)
+    return TEST_DB
+
+
+@pytest.fixture
+async def sessionmaker(migrated_db):
+    from sqlalchemy import text
+    from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+
+    engine = create_async_engine(migrated_db)
+    async with engine.begin() as conn:
+        await conn.execute(
+            text(
+                "TRUNCATE accounts, works, feedback, topics, feedback_topics, snapshots, sync_runs "
+                "RESTART IDENTITY CASCADE"
+            )
+        )
+    yield async_sessionmaker(engine, expire_on_commit=False)
+    await engine.dispose()
+
+
+@pytest.fixture(autouse=True)
+def no_throttle(monkeypatch):
+    """Keep tests fast: no politeness delay or retry backoff."""
+    monkeypatch.setattr(Source, "backoff_base", 0.0)
+    monkeypatch.setattr(BilibiliSource, "min_interval", 0.0)
+    monkeypatch.setattr(BilibiliSource, "jitter", 0.0)
 
 
 class FakeLLM(LLM):

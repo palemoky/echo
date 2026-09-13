@@ -12,6 +12,9 @@ class Comment(BaseModel):
     id: str
     platform: str
     content: str
+    kind: str = "comment"  # comment | reply | danmaku | review
+    parent_id: str | None = None
+    progress_ms: int | None = None  # danmaku position in the video
     author: str | None = None
     title: str | None = None
     rating: float | None = None
@@ -19,6 +22,27 @@ class Comment(BaseModel):
     created_at: datetime | None = None
     version: str | None = None
     url: str | None = None
+
+
+class AccountInfo(BaseModel):
+    """A creator / developer whose works are tracked."""
+
+    platform: str
+    external_id: str
+    name: str | None = None
+    url: str | None = None
+    meta: dict = Field(default_factory=dict)
+
+
+class WorkInfo(BaseModel):
+    """A single app / video belonging to an account."""
+
+    platform: str
+    external_id: str
+    title: str | None = None
+    url: str | None = None
+    published_at: datetime | None = None
+    meta: dict = Field(default_factory=dict)
 
 
 class FetchResult(BaseModel):

@@ -111,7 +111,9 @@ async def test_appstore_falls_back_to_web_page():
 @respx.mock
 async def test_bilibili_cursor_pagination():
     respx.get("https://api.bilibili.com/x/web-interface/view").mock(
-        return_value=httpx.Response(200, json={"code": 0, "data": {"aid": 42, "title": "Video"}})
+        return_value=httpx.Response(
+            200, json={"code": 0, "data": {"aid": 42, "bvid": "BV1GJ411x7h7", "title": "Video"}}
+        )
     )
 
     def replies(request):
@@ -160,7 +162,9 @@ async def test_youtube_requires_key(monkeypatch):
 @respx.mock
 async def test_youtube_pagination():
     respx.get("https://www.googleapis.com/youtube/v3/videos").mock(
-        return_value=httpx.Response(200, json={"items": [{"snippet": {"title": "Vid"}}]})
+        return_value=httpx.Response(
+            200, json={"items": [{"id": "dQw4w9WgXcQ", "snippet": {"title": "Vid"}}]}
+        )
     )
 
     def threads(request):

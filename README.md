@@ -13,7 +13,11 @@ AI-powered Voice of Customer (VOC) engine built on MCP. Extract product insights
 - **结构化洞察**：情感分布、痛点（带严重度）、功能需求、好评点、高频疑问、优先级建议
 - **证据可追溯**：每个主题的提及数和引用原文由程序根据真实评论计算，不由模型编造
 - **可扩展到大量评论**：分批并发分析（map）+ 主题合并（reduce）
-- **三种用法**：命令行、Python 库、MCP Server（接入 Claude Desktop / Cursor / Cherry Studio 等）
+- **账号级增量同步**：跟踪 UP 主 / YouTube 频道 / App Store 开发者下的全部作品，只抓新增评论，存到本地 PostgreSQL
+- **弹幕分析**（B 站）：弹幕密度时间轴、热点时刻识别与解读
+- **RAG 问答**：直接问"最近 1 个月用户反馈较多的问题是什么"，排行类问题走 SQL 精确计数，开放问题走 bge-m3 向量检索，回答带原文引用
+- **产品记忆**：按月份 / App 版本保存反馈快照，自动对比新增、上升、已解决的问题；结论写入 mem0 长期记忆
+- **三种用法**：命令行、Python 库、MCP Server（接入 Claude Code / Claude Desktop / Cursor / Cherry Studio 等）
 
 ## 快速开始
 
@@ -30,15 +34,15 @@ cp .env.example .env   # 填入至少一个模型的 API Key
 uv run echo-voc analyze "https://apps.apple.com/cn/app/wechat/id414478124"
 
 # 分析 B 站视频评论，用 Claude，输出中文报告到文件
-uv run echo-voc analyze "https://www.bilibili.com/video/BV1GJ411x7h7" \
+uv run echo-voc analyze "https://www.bilibili.com/video/BV13dYu6aEPf" \
   --provider anthropic --lang Chinese -n 300 -o report.md
 
 # 分析 YouTube 评论（需要 YOUTUBE_API_KEY），用本地 Ollama 模型
-uv run echo-voc analyze "https://www.youtube.com/watch?v=dQw4w9WgXcQ" \
+uv run echo-voc analyze "https://www.youtube.com/watch?v=_f7iYGxVSio" \
   --provider ollama --model qwen3
 
 # 只抓取评论（不调用模型），之后再分析
-uv run echo-voc fetch "https://www.bilibili.com/video/BV1GJ411x7h7" -o comments.json
+uv run echo-voc fetch "https://www.bilibili.com/video/BV13dYu6aEPf" -o comments.json
 uv run echo-voc analyze comments.json -f json -o report.json
 ```
 
@@ -79,13 +83,80 @@ _<提及数> mention(s) (<占比>) · severity <1-5>/5_
 ## ❓ Recurring questions
 ```
 
+## 本地工作区：增量同步、弹幕、RAG 与记忆
+
+实时 `analyze` 不需要数据库；以下能力需要本地 PostgreSQL（pgvector）和 embedding 模型（默认 Ollama `bge-m3`）。
+
+```bash
+uv sync --all-extras          # 安装 store（数据库）与 memory（mem0）依赖
+ollama pull bge-m3            # 1024 维中英多语言 embedding
+docker compose up -d          # 启动 pgvector/pgvector:pg17，端口 5433
+uv run echo-voc db init       # 建表 / 迁移
+```
+
+### 1. 跟踪账号并增量同步
+
+```bash
+# 跟踪整个账号（B 站需要 BILIBILI_COOKIE，YouTube 需要 YOUTUBE_API_KEY）
+uv run echo-voc add https://space.bilibili.com/486906719
+uv run echo-voc add https://www.youtube.com/@GoogleDevelopers
+uv run echo-voc add https://apps.apple.com/cn/developer/wechat/id614694882
+# 也可以只跟踪单个作品
+uv run echo-voc add https://www.bilibili.com/video/BV13dYu6aEPf
+
+uv run echo-voc sync --since 90d --danmaku      # 首次：抓近 90 天作品的评论和弹幕
+uv run echo-voc sync --danmaku                  # 之后：只抓新增内容（可放进 cron 定时执行）
+uv run echo-voc accounts && uv run echo-voc works
+uv run echo-voc export -o feedback.jsonl --since 30d   # 导出做离线分析
+```
+
+增量策略：作品按发布时间倒序列出，遇到已入库作品即停止；评论按时间倒序抓取，读到早于上次水位（留 6 小时重叠以刷新点赞数）的连续评论后停止；弹幕默认每天最多刷新一次。每个作品独立提交，中断后重跑即可续传。所有请求按平台限速（B 站约 1 次/秒）并在 412/429 时指数退避。
+
+### 2. 弹幕分析
+
+```bash
+uv run echo-voc report --work BV13dYu6aEPf --danmaku --lang Chinese -o danmaku.md
+```
+
+输出弹幕密度曲线、热点时间段（带跳转链接）及每个热点观众在吐槽/玩梗/提问什么，并对弹幕整体做主题分析（重复弹幕会合并计数）。
+
+### 3. 打标、问题库与 RAG 问答
+
+```bash
+uv run echo-voc embed                  # 用 bge-m3 计算向量（增量）
+uv run echo-voc label --since 90d      # LLM 标注情感并归入账号的问题库（增量；执行前会估算 token）
+uv run echo-voc topics list -a 1 --since 30d
+
+uv run echo-voc ask "最近1个月用户反馈较多的问题是什么"
+uv run echo-voc ask "有人抱怨发热或耗电吗？" --account 1
+uv run echo-voc report --account 1 --since 30d -o monthly.md   # 从库里生成报告，不重新抓取
+```
+
+- **问题库**：每个账号维护一份持续积累的 topic 列表。新主题先用 bge-m3 找相似候选（≥0.85 自动合并），模糊区间交给 LLM 判断是否为同一问题，避免"闪退"和"画质差"被误合并
+- **排行类问题**：纯向量 top-k 无法回答"较多"，因此按时间窗 SQL 统计各 topic 提及数，并与上一个同长度窗口对比（新增 / 涨幅）
+- **开放问题**：向量相似度 + 时间/情感过滤 + 点赞加权重排
+- 回答中的 `[#id]` 引用由程序校验并附上原文与链接；模型引用了不存在的 ID 会给出警告
+
+### 4. 产品记忆与趋势对比
+
+```bash
+uv run echo-voc snapshot -a 1 --monthly 6m          # 近 6 个月每月一个快照
+uv run echo-voc snapshot -a 3 --by-version          # App Store：每个版本一个快照
+uv run echo-voc trend -a 1 --last 3                 # 对比最近 3 个快照
+uv run echo-voc recall "闪退问题的历史" -a 3          # 查询 mem0 长期记忆
+```
+
+- **快照**（PostgreSQL）：保存每个时期的情感占比、各问题提及数与占比、LLM 摘要，数字精确可对比
+- **趋势**：程序计算 🆕 新增 / 📈 上升 / 📉 下降 / ✅ 消失 的问题，LLM 写出阶段对比结论
+- **mem0**：快照摘要和趋势结论写入 mem0（同一个 pgvector 库 + bge-m3）；`ask` 回答时会自动检索相关历史记忆。默认原文存储（结论本身已是 LLM 生成的摘要），设置 `ECHO_MEMORY_INFER=true` 可改由 mem0 抽取并合并事实；`ECHO_MEMORY=off` 关闭
+
 ## 支持的平台
 
 | 平台       | 链接示例                                                                      | 说明                                                                                              |
 | ---------- | ----------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
-| `appstore` | `https://apps.apple.com/cn/app/wechat/id414478124` 或 `appstore:414478124@cn` | 公开 RSS，每个地区最多 500 条最新评论；RSS 不可用时回退到网页（约 10–20 条）                      |
-| `youtube`  | `https://www.youtube.com/watch?v=...`、`youtu.be/...`、`/shorts/...`          | 需要 [YouTube Data API v3](https://console.cloud.google.com/apis/credentials) Key（免费额度足够） |
-| `bilibili` | `https://www.bilibili.com/video/BV...` 或 `av...`                             | 按热度排序；若被风控（-352）可设置 `BILIBILI_COOKIE`                                              |
+| `appstore` | `https://apps.apple.com/cn/app/wechat/id414478124` 或 `appstore:414478124@cn` | 公开 RSS，每个地区最多 500 条最新评论；RSS 不可用时回退到网页（约 10–20 条）。账号：`apps.apple.com/cn/developer/<name>/id<id>` |
+| `youtube`  | `https://www.youtube.com/watch?v=...`、`youtu.be/...`、`/shorts/...`          | 需要 [YouTube Data API v3](https://console.cloud.google.com/apis/credentials) Key。账号：`youtube.com/@handle` 或 `/channel/UC...` |
+| `bilibili` | `https://www.bilibili.com/video/BV...` 或 `av...`                             | 评论 + 弹幕。账号：`space.bilibili.com/<mid>`，列出全部视频需要登录 Cookie（`BILIBILI_COOKIE`，含 SESSDATA） |
 
 ## 支持的模型
 
@@ -110,11 +181,24 @@ ECHO_BASE_URL=http://localhost:8000/v1 ECHO_MODEL=Qwen3-8B \
 
 ## 作为 MCP Server 使用
 
-echo 提供 3 个工具：
+实时工具（无需数据库）：
 
 - `list_platforms` — 列出支持的平台
 - `fetch_comments(url, limit)` — 抓取原始评论，交给你正在用的 AI 助手自己分析（无需额外模型 Key）
 - `analyze_comments(url, limit, provider, model, language, output)` — 用 echo 配置的模型生成完整报告
+
+本地工作区工具：
+
+- `track(url)` / `list_accounts()` / `sync(account, work, since, danmaku)` — 跟踪与增量同步
+- `ask_feedback(question, account)` — RAG 问答
+- `list_topics(account, since, category)` — 问题排行
+- `get_trend(account, labels, last)` / `recall_memory(query, account)` — 趋势对比与长期记忆
+
+在 Claude Code 中使用：
+
+```bash
+claude mcp add echo -- uv --directory /path/to/echo run echo-voc mcp
+```
 
 Claude Desktop / Cursor 等配置示例：
 
@@ -152,10 +236,12 @@ asyncio.run(main())
 
 ## 工作原理
 
+实时分析：
+
 ```
 URL ─▶ Source（自动识别平台）─▶ 统一 Comment 结构
                                    │
-                    按长度分批 ────┤
+                      按长度分批 ────┤
                                    ▼
           Map：每批并发调用 LLM → 情感标签 + 草稿主题（引用评论编号）
                                    │
@@ -166,18 +252,38 @@ URL ─▶ Source（自动识别平台）─▶ 统一 Comment 结构
                         Markdown / JSON 报告
 ```
 
+本地工作区：
+
+```
+账号 URL ─▶ list works（增量）─▶ comments / danmaku（按水位增量、限速、断点续跑）
+                                        │
+        PostgreSQL + pgvector：accounts · works · feedback · topics · snapshots
+                                        │
+      ┌──────────────┬──────────────────┼────────────────┬─────────────────────┐
+      ▼              ▼                  ▼                ▼                     ▼
+ embed（bge-m3）  label（LLM）       report           ask（RAG）          snapshot / trend
+ feedback 向量    情感 + 问题库       复用 map-reduce  SQL 计数 + 向量检索   结构化快照 + mem0 记忆
+```
+
 ## 项目结构
 
 ```
 src/echo_voc/
-├── sources/        # 平台适配器：appstore.py youtube.py bilibili.py
-├── llm/            # 模型适配器：openai_compat.py anthropic.py + 预设
-├── analyzer.py     # map-reduce 分析
-├── prompts.py      # 提示词
-├── report.py       # Markdown 渲染
-├── service.py      # CLI 与 MCP 共用的入口
-├── cli.py          # 命令行
-└── mcp_server.py   # MCP Server
+├── sources/            # 平台适配器（含账号列表、B 站 WBI 签名与弹幕 protobuf 解析）
+├── llm/                # 模型适配器：openai_compat.py anthropic.py + 预设
+├── embeddings/         # Ollama / OpenAI 兼容 embedding
+├── store/              # SQLAlchemy 模型、Alembic 迁移、仓储与查询过滤
+├── memory/             # 快照与趋势对比、mem0 适配
+├── analyzer.py         # map-reduce 分析
+├── analyzer_danmaku.py # 弹幕热点分析
+├── sync.py             # 账号 → 作品 → 评论/弹幕 增量同步
+├── label.py            # 增量打标与问题库维护
+├── rag.py              # 问答：查询规划 + SQL 排行 + 向量检索
+├── offline.py          # 基于数据库的报告
+├── workspace.py        # CLI 与 MCP 共用的本地工作区操作
+├── report.py / prompts.py
+├── cli.py / cli_store.py
+└── mcp_server.py
 ```
 
 ## 贡献
@@ -185,8 +291,9 @@ src/echo_voc/
 ### 新增一个平台
 
 1. 在 `src/echo_voc/sources/` 下新建文件，继承 `Source`，实现 `matches()` 和 `fetch()`，返回 `FetchResult`
-2. 在 `sources/__init__.py` 的 `SOURCES` 中注册
-3. 在 `tests/test_sources.py` 中用 `respx` 模拟接口添加测试
+2. 如需支持账号同步，再实现 `matches_account()`、`resolve_account()`、`resolve_work()`、`iter_works()`（新到旧）和 `iter_comments()`（新到旧）；请求统一走 `self.request()` 以获得限速与重试
+3. 在 `sources/__init__.py` 的 `SOURCES` 中注册
+4. 在 `tests/` 中用 `respx` 模拟接口添加测试
 
 ### 新增一个模型
 
@@ -195,23 +302,26 @@ OpenAI 兼容的服务只需在 `llm/__init__.py` 的 `PROVIDERS` 中加一行�
 ### 开发
 
 ```bash
-uv sync
+uv sync --all-extras
+docker compose up -d        # 数据库相关测试需要；没有数据库时这些测试会自动跳过
 uv run pytest
 uv run ruff check src tests && uv run ruff format src tests
 ```
 
 ## Roadmap
 
-- [ ] 更多平台：Google Play、小红书、抖音、淘宝/京东商品评价、Reddit、Steam、GitHub Issues
+- [x] 账号级增量抓取与本地存储（PostgreSQL + pgvector）
+- [x] B 站弹幕抓取与热点分析
+- [x] RAG 问答、问题库、快照趋势与 mem0 记忆
+- [ ] 更多平台：Google Play、小红书、抖音、淘宝/京东商品评价、Reddit、Steam、GitHub Issues、V2EX
 - [ ] App Store 完整历史评论（突破 RSS 500 条限制）
-- [ ] 增量抓取与本地存储（SQLite），追踪版本间反馈变化
 - [ ] 多链接对比分析（竞品对比）
-- [ ] 报告多语言标题、HTML 报告与 Web UI
+- [ ] 报告多语言标题、HTML 报告与 Web UI（FastAPI + React）
 - [ ] 定时任务 + 飞书/Slack/邮件推送
 
 ## 注意事项
 
-请遵守各平台的服务条款与 robots 规则，合理控制抓取频率，仅将数据用于产品改进等正当用途，不要收集或公开用户个人信息。
+请遵守各平台的服务条款与 robots 规则，合理控制抓取频率，仅将数据用于产品改进等正当用途，不要收集或公开用户个人信息。echo 入库时只保存作者 ID 的哈希值，不保存用户名、头像等个人信息；`BILIBILI_COOKIE` 等凭据只从本地环境变量读取。
 
 ## License
 
