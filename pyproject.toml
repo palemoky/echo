@@ -1,0 +1,43 @@
+[project]
+name = "echo-voc"
+version = "0.1.0"
+description = "AI-powered Voice of Customer (VOC) engine built on MCP. Extract product insights & pain points from multi-platform comments."
+readme = "README.md"
+license = "AGPL-3.0-or-later"
+requires-python = ">=3.10"
+dependencies = [
+    "anthropic>=1.0",
+    "httpx>=0.27",
+    "mcp>=2.2",
+    "openai>=3.0",
+    "pydantic>=2.7",
+    "python-dotenv>=1.0",
+    "rich>=13",
+    "typer>=0.12",
+]
+keywords = ["voc", "reviews", "comments", "llm", "mcp", "feedback", "app-store", "youtube", "bilibili"]
+
+[project.scripts]
+echo-voc = "echo_voc.cli:app"
+
+[dependency-groups]
+dev = ["pytest>=8", "pytest-asyncio>=0.24", "respx>=0.21", "ruff>=0.6"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/echo_voc"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+ignore = ["UP007", "UP045"]  # typer needs Optional[...] at runtime on 3.10 annotations
