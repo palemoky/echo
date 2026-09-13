@@ -1,0 +1,3 @@
+{% if memories %}
+<ul>{% for m in memories %}<li>{{ m }}</li>{% endfor %}</ul>
+{% elif query %}<p class="muted">没有找到相关记忆。生成快照或趋势对比时勾选"写入记忆"即可积累。</p>{% endif %}

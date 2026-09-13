@@ -1,0 +1,87 @@
+{% extends "base.html" %}
+{% block title %}{{ account.name or account.external_id }}{% endblock %}
+{% block content %}
+<hgroup>
+  <h2>{{ account.name or account.external_id }}</h2>
+  <p>{{ account.platform|platform }} · {% if account.url %}<a href="{{ account.url }}" target="_blank" rel="noopener">{{ account.url }}</a> · {% endif %}{{ "跟踪全部作品" if account.track_all else "只跟踪指定作品" }} · 上次同步 {{ account.last_synced_at|dt }}</p>
+</hgroup>
+
+<div class="grid-auto">
+  <div class="stat"><span class="muted small">作品</span><b>{{ overview.works|num }}</b></div>
+  <div class="stat"><span class="muted small">评论 / 评价</span><b>{{ overview.feedback|num }}</b></div>
+  <div class="stat"><span class="muted small">弹幕</span><b>{{ overview.danmaku|num }}</b></div>
+  <div class="stat"><span class="muted small">已打标</span><b>{{ share(overview.labeled, overview.feedback)|pct }}</b></div>
+</div>
+
+<article>
+  <h3>数据处理</h3>
+  <details class="panel" open>
+    <summary>1. 增量同步</summary>
+    <form hx-post="/jobs/sync" hx-target="#account-jobs" hx-swap="afterbegin">
+      <input type="hidden" name="account" value="{{ account.id }}">
+      <div class="inline-fields">
+        <label>时间范围
+          <select name="since">{% for value, label in since_choices %}<option value="{{ value }}" {% if value == ("" if account.last_synced_at else "90d") %}selected{% endif %}>{{ label }}</option>{% endfor %}</select>
+        </label>
+        <label>每个作品最多（留空不限）<input name="max_per_work" type="number" min="1" placeholder="不限"></label>
+      </div>
+      <div class="check-list">
+        {% if account.platform == "bilibili" %}<label><input type="checkbox" name="danmaku" value="true" checked> 弹幕</label>{% endif %}
+        <label><input type="checkbox" name="replies" value="true"> 楼中楼回复</label>
+        <label><input type="checkbox" name="full" value="true"> 全量重扫（忽略水位）</label>
+      </div>
+      <button type="submit">开始同步</button>
+    </form>
+  </details>
+  <details class="panel">
+    <summary>2. 计算向量与打标</summary>
+    <p class="small muted">向量用于语义检索（本地 bge-m3，免费）；打标会调用 LLM 标注情感并归入问题库，开始前会先估算 token。</p>
+    <div class="row-actions">
+      <button class="secondary" hx-post="/jobs/embed" hx-vals='{"account": "{{ account.id }}"}' hx-target="#account-jobs" hx-swap="afterbegin">计算向量</button>
+      <form class="row-actions" hx-get="/label/estimate" hx-target="#label-estimate">
+        <input type="hidden" name="account" value="{{ account.id }}">
+        <select name="since" aria-label="时间范围">{% for value, label in since_choices %}<option value="{{ value }}" {% if value == "90d" %}selected{% endif %}>{{ label }}</option>{% endfor %}</select>
+        <input name="limit" type="number" min="1" placeholder="最多条数" aria-label="最多条数">
+        <button type="submit" class="secondary">估算打标成本</button>
+      </form>
+    </div>
+    <div id="label-estimate"></div>
+  </details>
+  <details class="panel">
+    <summary>3. 生成报告</summary>
+    <form hx-post="/jobs/report" hx-target="#account-jobs" hx-swap="afterbegin">
+      <input type="hidden" name="account" value="{{ account.id }}">
+      <div class="inline-fields">
+        <label>时间范围<select name="since">{% for value, label in since_choices %}<option value="{{ value }}" {% if value == "30d" %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></label>
+        <label>最多分析条数<input name="limit" type="number" value="500" min="10"></label>
+        <label>选取方式<select name="order"><option value="likes">点赞最多</option><option value="newest">最新</option></select></label>
+        <label>报告语言<input name="language" value="{{ language }}" placeholder="如 Chinese"></label>
+      </div>
+      {% include "partials/llm_fields.html" %}
+      <button type="submit">生成报告</button>
+    </form>
+  </details>
+  <p class="small">问答与趋势：<a href="/ask">向数据提问</a> · <a href="/topics?account={{ account.id }}">问题排行</a> · <a href="/trends?account={{ account.id }}">快照与趋势</a>{% if snapshots %}（已有快照：{{ snapshots|join("、") }}）{% endif %}</p>
+  <div id="account-jobs"></div>
+</article>
+
+<article>
+  <h3>作品</h3>
+  {% if works %}
+  <div class="table-wrap"><table>
+    <thead><tr><th>发布</th><th>标题</th><th>评论</th><th>弹幕</th><th>评论同步</th><th></th></tr></thead>
+    <tbody>
+    {% for w in works %}
+    <tr>
+      <td class="nowrap">{{ w.published_at|dt("%Y-%m-%d") }}</td>
+      <td class="content-cell"><a href="/works/{{ w.id }}">{{ w.title or w.external_id }}</a>{% if w.partial %} <span class="badge question" title="曾按上限抽样，需全量重扫才能补全">部分</span>{% endif %}</td>
+      <td>{{ w.comments|num }}</td><td>{{ w.danmaku|num }}</td>
+      <td class="nowrap small">{{ w.comments_synced_at|dt("%m-%d %H:%M") }}</td>
+      <td><button class="outline small" style="padding: 0.2rem 0.6rem" hx-post="/jobs/sync" hx-vals='{"work": "{{ w.id }}"{% if w.platform == "bilibili" %}, "danmaku": "true"{% endif %}}' hx-target="#account-jobs" hx-swap="afterbegin">同步</button></td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+  {% else %}<p class="muted">还没有作品，先执行一次同步。</p>{% endif %}
+</article>
+{% endblock %}

@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block title %}账号{% endblock %}
+{% block content %}
+<h2>账号</h2>
+<article>
+  <form hx-post="/accounts" hx-target="#accounts" hx-indicator="#add-busy" hx-on::after-request="if(event.detail.successful) this.reset()">
+    <label>账号或作品链接
+      <fieldset role="group">
+        <input name="url" type="url" required placeholder="https://space.bilibili.com/486906719">
+        <button type="submit">添加 <span id="add-busy" class="htmx-indicator" aria-busy="true"></span></button>
+      </fieldset>
+      <small>支持：B 站空间 / 视频、YouTube 频道（@handle 或 /channel/UC…）/ 视频、App Store 开发者 / App。只添加作品时，只同步该作品。</small>
+    </label>
+  </form>
+  <div id="accounts" hx-get="/accounts" hx-trigger="data-changed from:body" hx-select="#accounts" hx-swap="outerHTML">{% include "partials/accounts_table.html" %}</div>
+</article>
+{% endblock %}

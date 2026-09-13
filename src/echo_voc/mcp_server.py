@@ -103,14 +103,9 @@ async def track(url: str) -> dict:
     Args:
         url: Account URL (Bilibili space, YouTube channel, App Store developer) or a work URL.
     """
-    from echo_voc.store.db import get_sessionmaker
-    from echo_voc.sync import Syncer
+    from echo_voc import workspace
 
-    syncer = Syncer(get_sessionmaker())
-    try:
-        account, work = await syncer.add(url)
-    finally:
-        await syncer.aclose()
+    account, work = await workspace.add(url)
     return {
         "account_id": account.id,
         "account": account.name,
@@ -124,23 +119,21 @@ async def track(url: str) -> dict:
 @server.tool()
 async def list_accounts() -> list[dict]:
     """List tracked accounts with their ids."""
-    from sqlalchemy import select
+    from echo_voc import workspace
 
-    from echo_voc.store.db import get_sessionmaker
-    from echo_voc.store.models import Account
-
-    async with get_sessionmaker()() as session:
-        rows = (await session.execute(select(Account).order_by(Account.id))).scalars()
-        return [
-            {
-                "id": a.id,
-                "platform": a.platform,
-                "name": a.name,
-                "tracks_all_works": a.track_all,
-                "last_synced_at": a.last_synced_at.isoformat() if a.last_synced_at else None,
-            }
-            for a in rows
-        ]
+    return [
+        {
+            "id": a.id,
+            "platform": a.platform,
+            "name": a.name,
+            "tracks_all_works": a.track_all,
+            "works": a.works,
+            "comments": a.feedback,
+            "danmaku": a.danmaku,
+            "last_synced_at": a.last_synced_at.isoformat() if a.last_synced_at else None,
+        }
+        for a in await workspace.accounts_overview()
+    ]
 
 
 @server.tool()
@@ -160,28 +153,12 @@ async def sync(
         danmaku: Also sync Bilibili danmaku.
         max_per_work: Safety cap per work for interactive use; null for no cap.
     """
-    from echo_voc.store import repo
-    from echo_voc.store.db import get_sessionmaker
-    from echo_voc.sync import Syncer, SyncOptions, SyncStats
+    from echo_voc import workspace
+    from echo_voc.sync import SyncOptions
     from echo_voc.timeutil import parse_since
 
     options = SyncOptions(since=parse_since(since), danmaku=danmaku, max_per_work=max_per_work)
-    sm = get_sessionmaker()
-    syncer = Syncer(sm)
-    try:
-        if work:
-            async with sm() as session:
-                work_id = (await repo.find_work(session, work)).id
-            stats = SyncStats()
-            await syncer.sync_work(work_id, options, stats)
-        elif account:
-            async with sm() as session:
-                account_id = (await repo.find_account(session, account)).id
-            stats = await syncer.sync_account(account_id, options)
-        else:
-            stats = await syncer.sync_all(options)
-    finally:
-        await syncer.aclose()
+    stats = await workspace.sync(account=account, work=work, options=options)
     return stats.__dict__
 
 

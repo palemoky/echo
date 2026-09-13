@@ -1,0 +1,2 @@
+<p>已生成 {{ r.snapshots|length }} 个快照：{% for s in r.snapshots %}<b>{{ s.label }}</b>（{{ s.stats.total }} 条）{% if not loop.last %}、{% endif %}{% endfor %}</p>
+{% for w in r.warnings %}<div class="flash error small">{{ w }}</div>{% endfor %}

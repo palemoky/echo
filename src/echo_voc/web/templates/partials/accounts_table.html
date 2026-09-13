@@ -1,0 +1,18 @@
+{% if flash %}<div class="flash success">{{ flash }}</div>{% endif %}
+{% if accounts %}
+<div class="table-wrap"><table>
+  <thead><tr><th>账号</th><th>平台</th><th>范围</th><th>作品</th><th>评论</th><th>弹幕</th><th>已打标</th><th>上次同步</th></tr></thead>
+  <tbody>
+  {% for a in accounts %}
+  <tr>
+    <td><a href="/accounts/{{ a.id }}">{{ a.name or a.external_id }}</a></td>
+    <td>{{ a.platform|platform }}</td>
+    <td class="small">{{ "全部作品" if a.track_all else "指定作品" }}</td>
+    <td>{{ a.works|num }}</td><td>{{ a.feedback|num }}</td><td>{{ a.danmaku|num }}</td>
+    <td>{{ share(a.labeled, a.feedback)|pct }}</td>
+    <td class="nowrap small">{{ a.last_synced_at|dt("%m-%d %H:%M") }}</td>
+  </tr>
+  {% endfor %}
+  </tbody>
+</table></div>
+{% else %}<p class="muted">还没有跟踪任何账号，粘贴一个链接开始吧。</p>{% endif %}

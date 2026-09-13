@@ -1,0 +1,18 @@
+{% if rows %}
+{% set top = rows[0].mentions %}
+<div class="table-wrap"><table>
+  <thead><tr><th>问题</th><th>类型</th><th>提及</th><th>严重度</th><th>最近出现</th></tr></thead>
+  <tbody>
+  {% for t in rows %}
+  <tr>
+    <td class="content-cell"><a href="#topic-feedback" hx-get="/topics/{{ t.id }}/feedback?since={{ filters.since }}" hx-target="#topic-feedback">{{ t.title }}</a>
+      <div class="small muted">{{ t.description }}</div></td>
+    <td><span class="badge {{ t.category }}">{{ t.category|category }}</span></td>
+    <td style="min-width: 8rem">{{ t.mentions }}<progress value="{{ t.mentions }}" max="{{ top }}" style="margin: 0.25rem 0 0"></progress></td>
+    <td>{{ t.severity or "-" }}</td>
+    <td class="nowrap small">{{ t.last_seen|dt("%Y-%m-%d") }}</td>
+  </tr>
+  {% endfor %}
+  </tbody>
+</table></div>
+{% else %}<p class="muted">这个范围内还没有已归类的问题。先在账号页执行"打标"。</p>{% endif %}

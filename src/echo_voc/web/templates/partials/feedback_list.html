@@ -1,0 +1,22 @@
+<p class="muted small">共 {{ total|num }} 条 · 第 {{ page }} / {{ pages }} 页</p>
+{% if rows %}
+<div class="table-wrap"><table>
+  <thead><tr><th>时间</th><th>内容</th><th>情感</th><th>点赞</th></tr></thead>
+  <tbody>
+  {% for fb in rows %}
+  <tr>
+    <td class="nowrap small">{% if fb.kind == "danmaku" and fb.progress_ms is not none %}▶ {{ fb.progress_ms|mmss }}<br>{% endif %}{{ fb.created_at|dt("%Y-%m-%d") }}</td>
+    <td class="content-cell">{% if fb.title %}<strong>{{ fb.title }}</strong><br>{% endif %}{{ fb.content }}
+      <div class="small muted">{{ fb.kind|kind }}{% if fb.rating is not none %} · {{ fb.rating|round|int }}★{% endif %}{% if fb.app_version %} · v{{ fb.app_version }}{% endif %}{% if fb.url %} · <a href="{{ fb.url }}" target="_blank" rel="noopener">原文</a>{% endif %}</div></td>
+    <td>{% if fb.sentiment %}<span class="badge {{ fb.sentiment }}">{{ fb.sentiment|sentiment }}</span>{% else %}<span class="muted small">未打标</span>{% endif %}</td>
+    <td>{{ (fb.likes or 0)|num }}</td>
+  </tr>
+  {% endfor %}
+  </tbody>
+</table></div>
+<div class="row-actions">
+  {% set qs = params|urlencode %}
+  {% if page > 1 %}<button class="outline secondary" hx-get="{{ base }}?{{ qs }}&page={{ page - 1 }}" hx-target="#feedback">上一页</button>{% endif %}
+  {% if page < pages %}<button class="outline secondary" hx-get="{{ base }}?{{ qs }}&page={{ page + 1 }}" hx-target="#feedback">下一页</button>{% endif %}
+</div>
+{% else %}<p class="muted">没有匹配的数据。</p>{% endif %}

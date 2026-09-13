@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}echo{% endblock %} · echo</title>
+  <link rel="stylesheet" href="{{ url_for('static', path='vendor/pico.min.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', path='app.css') }}">
+  <script src="{{ url_for('static', path='vendor/htmx.min.js') }}" defer></script>
+  <script src="{{ url_for('static', path='vendor/echarts.min.js') }}" defer></script>
+  <script src="{{ url_for('static', path='app.js') }}" defer></script>
+</head>
+<body>
+  {% set path = request.url.path %}
+  <header class="site">
+    <nav class="container">
+      <ul><li><a class="brand" href="/">echo</a> <span class="muted small">v{{ version }}</span></li></ul>
+      <ul>
+        {% for href, label in [("/", "概览"), ("/accounts", "账号"), ("/analyze", "分析"), ("/ask", "问答"), ("/topics", "问题"), ("/trends", "趋势"), ("/settings", "设置")] %}
+        <li><a href="{{ href }}" {% if (href == "/" and path == "/") or (href != "/" and path.startswith(href)) %}aria-current="page"{% endif %}>{{ label }}</a></li>
+        {% endfor %}
+      </ul>
+    </nav>
+  </header>
+  <main class="container">
+    <div id="flash"></div>
+    {% block content %}{% endblock %}
+  </main>
+</body>
+</html>

@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block title %}趋势{% endblock %}
+{% block content %}
+<h2>快照与趋势</h2>
+<p class="muted">快照保存某个时期（或 App 版本）的情感与问题统计；选择两个以上快照即可对比变化。结论可写入 mem0 长期记忆。</p>
+{% if not accounts %}
+<article><p>还没有跟踪账号，先到 <a href="/accounts">账号</a> 添加。</p></article>
+{% else %}
+<article>
+  <label>账号
+    <select name="account" hx-get="/trends/snapshots" hx-target="#snapshots" hx-trigger="change" hx-include="this">
+      {% for a in accounts %}<option value="{{ a.id }}" {% if selected == a.id|string %}selected{% endif %}>{{ a.name or a.external_id }}（{{ a.platform|platform }}）</option>{% endfor %}
+    </select>
+  </label>
+  <div id="snapshots" hx-get="/trends/snapshots?account={{ selected }}" hx-trigger="load"><progress></progress></div>
+</article>
+<div id="trend-jobs"></div>
+
+<article>
+  <h3>搜索长期记忆</h3>
+  <form hx-get="/memory/search" hx-target="#memories" hx-indicator="#mem-busy">
+    <fieldset role="group">
+      <input name="q" type="search" placeholder="例如：闪退问题的历史">
+      <select name="account" aria-label="账号"><option value="">全部账号</option>{% for a in accounts %}<option value="{{ a.id }}">{{ a.name or a.external_id }}</option>{% endfor %}</select>
+      <button type="submit">搜索 <span id="mem-busy" class="htmx-indicator" aria-busy="true"></span></button>
+    </fieldset>
+  </form>
+  <div id="memories"></div>
+</article>
+{% endif %}
+{% endblock %}

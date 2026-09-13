@@ -1,0 +1,9 @@
+<h3>{{ topic.title }} <span class="badge {{ topic.category }}">{{ topic.category|category }}</span></h3>
+<p class="muted">{{ topic.description }}</p>
+{% if rows %}
+<ul class="small">
+  {% for fb, work in rows %}
+  <li>{{ fb.content|truncate(300) }} <span class="muted">— <a href="/works/{{ work.id }}">{{ work.title or work.external_id }}</a> · {{ fb.created_at|dt("%Y-%m-%d") }}{% if fb.likes %} · 👍 {{ fb.likes|num }}{% endif %}{% if fb.url %} · <a href="{{ fb.url }}" target="_blank" rel="noopener">原文</a>{% endif %}</span></li>
+  {% endfor %}
+</ul>
+{% else %}<p class="muted">这个时间范围内没有原文。</p>{% endif %}

@@ -1,0 +1,36 @@
+{% set prefix = "src-" ~ job.id %}
+<section class="answer">
+  <h3>{{ result.question }}</h3>
+  <p class="muted small">
+    {{ "排行统计" if result.plan.intent == "ranking" else "语义检索" }}
+    {% if result.window[0] %} · {{ result.window[0]|dt("%Y-%m-%d") }} 至 {{ (result.window[1]|dt("%Y-%m-%d")) if result.window[1] else "今天" }}{% endif %}
+    {% if result.plan.category %} · {{ result.plan.category|category }}{% endif %}
+  </p>
+  {{ result.answer|markdown(prefix) }}
+  {% for w in result.warnings %}<div class="flash error small">{{ w }}</div>{% endfor %}
+  {% if result.topics %}
+  <div class="table-wrap"><table>
+    <thead><tr><th>#</th><th>问题</th><th>类型</th><th>提及</th><th>上一周期</th><th>变化</th></tr></thead>
+    <tbody>
+    {% for t in result.topics %}
+    <tr><td>{{ loop.index }}</td><td>{{ t.title }}</td><td><span class="badge {{ t.category }}">{{ t.category|category }}</span></td>
+      <td>{{ t.mentions }}</td><td>{{ t.previous }}</td><td>{{ "新出现" if t.trend == "new" else t.trend }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+  {% endif %}
+  {% if result.sources %}
+  <details {% if result.plan.intent != "ranking" %}open{% endif %}>
+    <summary>引用与相关原文（{{ result.sources|length }}）</summary>
+    <ol class="sources small">
+      {% for s in result.sources %}
+      <li id="{{ prefix }}-{{ s.id }}"><b>#{{ s.id }}</b> {{ s.content|truncate(300) }}
+        <span class="muted">— {{ s.work_title or "" }} · {{ s.created_at|dt("%Y-%m-%d") }}{% if s.likes %} · 👍 {{ s.likes|num }}{% endif %}{% if s.url %} · <a href="{{ s.url }}" target="_blank" rel="noopener">原文</a>{% endif %}</span></li>
+      {% endfor %}
+    </ol>
+  </details>
+  {% endif %}
+  {% if result.memories %}
+  <details><summary>参考的历史记忆（{{ result.memories|length }}）</summary><ul class="small">{% for m in result.memories %}<li>{{ m }}</li>{% endfor %}</ul></details>
+  {% endif %}
+</section>

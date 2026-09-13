@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block title %}问题{% endblock %}
+{% block content %}
+<h2>问题排行</h2>
+<p class="muted">问题库由打标自动维护。点击问题查看对应原文。</p>
+<article>
+  <form class="inline-fields" hx-get="/topics/table" hx-target="#topics" hx-trigger="change" hx-push-url="false">
+    <label>账号<select name="account"><option value="">全部账号</option>{% for a in accounts %}<option value="{{ a.id }}" {% if filters.account == a.id|string %}selected{% endif %}>{{ a.name or a.external_id }}</option>{% endfor %}</select></label>
+    <label>时间范围<select name="since">{% for value, label in since_choices %}<option value="{{ value }}" {% if value == filters.since %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></label>
+    <label>类型<select name="category"><option value="">全部</option>{% for c in ["pain_point", "feature_request", "praise", "question"] %}<option value="{{ c }}" {% if c == filters.category %}selected{% endif %}>{{ c|category }}</option>{% endfor %}</select></label>
+  </form>
+  <div id="topics">{% include "partials/topics_table.html" %}</div>
+</article>
+<article id="topic-feedback"><p class="muted">选择一个问题查看原文。</p></article>
+{% endblock %}

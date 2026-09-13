@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+{% block title %}概览{% endblock %}
+{% block content %}
+<h2>概览</h2>
+{% if db_error %}
+<article>
+  <h3>还没有连接数据库</h3>
+  <p class="muted">{{ db_error }}</p>
+  <p>实时分析无需数据库，可以直接使用 <a href="/analyze">分析</a>。要使用账号同步、问答和趋势，请先执行：</p>
+  <pre><code>docker compose up -d
+uv run echo-voc db init</code></pre>
+</article>
+{% else %}
+{% set feedback = accounts|sum(attribute="feedback") %}
+{% set labeled = accounts|sum(attribute="labeled") %}
+<div class="grid-auto">
+  <div class="stat"><span class="muted small">跟踪账号</span><b>{{ accounts|length }}</b></div>
+  <div class="stat"><span class="muted small">作品</span><b>{{ accounts|sum(attribute="works")|num }}</b></div>
+  <div class="stat"><span class="muted small">评论 / 评价</span><b>{{ feedback|num }}</b></div>
+  <div class="stat"><span class="muted small">弹幕</span><b>{{ accounts|sum(attribute="danmaku")|num }}</b></div>
+  <div class="stat"><span class="muted small">已打标</span><b>{{ share(labeled, feedback)|pct }}</b></div>
+  <div class="stat"><span class="muted small">问题库</span><b>{{ topics|num }}</b></div>
+</div>
+
+<article>
+  <h3>添加账号或作品</h3>
+  <form hx-post="/accounts" hx-target="#accounts" hx-indicator="#add-busy" hx-on::after-request="if(event.detail.successful) this.reset()">
+    <fieldset role="group">
+      <input name="url" type="url" required placeholder="https://space.bilibili.com/… / https://www.youtube.com/@… / App Store 开发者或 App 链接">
+      <button type="submit">添加 <span id="add-busy" class="htmx-indicator" aria-busy="true"></span></button>
+    </fieldset>
+  </form>
+  <div id="accounts">{% include "partials/accounts_table.html" %}</div>
+</article>
+
+<article>
+  <header class="row-actions" style="justify-content: space-between">
+    <h3 style="margin: 0">后台任务</h3>
+    <button class="secondary outline" hx-post="/jobs/sync" hx-target="#dash-job" hx-swap="innerHTML">同步全部账号</button>
+  </header>
+  <div id="dash-job"></div>
+  <div hx-get="/jobs" hx-trigger="every 3s" hx-swap="innerHTML">{% include "partials/job_list.html" %}</div>
+</article>
+
+<article>
+  <h3>最近同步记录</h3>
+  {% if runs %}
+  <div class="table-wrap"><table>
+    <thead><tr><th>时间</th><th>类型</th><th>范围</th><th>状态</th><th>新增 / 读取</th><th>错误</th></tr></thead>
+    <tbody>
+    {% for run in runs %}
+    <tr>
+      <td class="nowrap">{{ run.started_at|dt("%m-%d %H:%M") }}</td>
+      <td>{{ {"works": "作品列表", "comments": "评论", "danmaku": "弹幕"}.get(run.kind, run.kind) }}</td>
+      <td>{% if run.work_id %}<a href="/works/{{ run.work_id }}">作品 #{{ run.work_id }}</a>{% elif run.account_id %}<a href="/accounts/{{ run.account_id }}">账号 #{{ run.account_id }}</a>{% endif %}</td>
+      <td><span class="badge {{ 'done' if run.status == 'ok' else run.status }}">{{ run.status }}</span></td>
+      <td>{{ run.new_items|num }} / {{ run.seen_items|num }}</td>
+      <td class="small muted">{{ run.error or "" }}</td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+  {% else %}<p class="muted">还没有同步记录。</p>{% endif %}
+</article>
+{% endif %}
+{% endblock %}

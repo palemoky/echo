@@ -1,0 +1,24 @@
+{% set report = r.report %}
+<section>
+  <h3>弹幕分析：{{ report.title }}</h3>
+  <p class="muted small">{{ report.total|num }} 条弹幕 · 时长 {{ (report.duration_s * 1000)|mmss }} · 每柱 {{ report.bucket_s }} 秒 · 点击柱子可跳转到视频对应时间</p>
+  <div class="chart" data-chart='{{ r.chart|tojson }}' {% if report.url %}data-video-url="{{ report.url }}"{% endif %}></div>
+  {% if report.hotspots %}
+  <h4>热点时刻</h4>
+  <div class="table-wrap"><table>
+    <thead><tr><th>时间</th><th>弹幕</th><th>类型</th><th>发生了什么</th><th>代表弹幕</th></tr></thead>
+    <tbody>
+    {% for h in report.hotspots %}
+    <tr>
+      <td class="nowrap">{% if report.url %}<a href="{{ report.url }}?t={{ h.start_ms // 1000 }}" target="_blank" rel="noopener">{{ h.start_ms|mmss }}–{{ h.end_ms|mmss }}</a>{% else %}{{ h.start_ms|mmss }}–{{ h.end_ms|mmss }}{% endif %}</td>
+      <td class="nowrap">{{ h.count }}（×{{ h.ratio }}）</td>
+      <td><span class="badge">{{ h.label or "-" }}</span></td>
+      <td>{{ h.summary or "" }}</td>
+      <td class="small">{{ h.examples[:3]|join(" / ") }}</td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+  {% endif %}
+  {% if report.overall %}{% with report = report.overall %}{% include "partials/report.html" %}{% endwith %}{% endif %}
+</section>

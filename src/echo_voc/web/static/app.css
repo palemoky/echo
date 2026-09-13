@@ -1,0 +1,57 @@
+:root { --pico-font-size: 95%; --echo-pos: #2e9e6b; --echo-neu: #9aa3ad; --echo-neg: #d9534f; }
+body > header.site { border-bottom: 1px solid var(--pico-muted-border-color); margin-bottom: 1.5rem; }
+header.site nav { padding-block: 0.25rem; }
+header.site .brand { font-weight: 700; letter-spacing: 0.02em; text-decoration: none; }
+header.site nav a[aria-current="page"] { font-weight: 600; text-decoration: underline; text-underline-offset: 6px; }
+main.container { padding-bottom: 4rem; }
+.muted { color: var(--pico-muted-color); }
+.small { font-size: 0.85em; }
+.nowrap { white-space: nowrap; }
+.grid-auto { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr)); gap: 1rem; }
+.stat { padding: 1rem; border: 1px solid var(--pico-muted-border-color); border-radius: var(--pico-border-radius); }
+.stat b { display: block; font-size: 1.6rem; line-height: 1.2; }
+.table-wrap { overflow-x: auto; }
+table td, table th { vertical-align: top; }
+.badge { display: inline-block; padding: 0.05rem 0.5rem; border-radius: 999px; font-size: 0.78em;
+  background: var(--pico-secondary-background); color: var(--pico-secondary-inverse); white-space: nowrap; }
+.badge.pain_point, .badge.negative, .badge.failed { background: var(--echo-neg); color: #fff; }
+.badge.praise, .badge.positive, .badge.done { background: var(--echo-pos); color: #fff; }
+.badge.feature_request, .badge.running { background: #4f8ef7; color: #fff; }
+.badge.question, .badge.queued { background: #e0a526; color: #1b1b1b; }
+.badge.neutral { background: var(--echo-neu); color: #fff; }
+.sentiment-bar { display: flex; height: 0.75rem; border-radius: 999px; overflow: hidden; background: var(--pico-muted-border-color); }
+.sentiment-bar span { display: block; }
+.sentiment-bar .positive { background: var(--echo-pos); }
+.sentiment-bar .neutral { background: var(--echo-neu); }
+.sentiment-bar .negative { background: var(--echo-neg); }
+.legend { display: flex; gap: 1rem; flex-wrap: wrap; font-size: 0.85em; margin-top: 0.35rem; }
+.theme-card { border-left: 4px solid var(--pico-muted-border-color); padding-left: 1rem; margin-bottom: 1.25rem; }
+.theme-card.pain_point { border-color: var(--echo-neg); }
+.theme-card.praise { border-color: var(--echo-pos); }
+.theme-card.feature_request { border-color: #4f8ef7; }
+.theme-card.question { border-color: #e0a526; }
+blockquote.evidence { margin: 0.4rem 0; padding: 0.35rem 0.75rem; font-size: 0.92em; }
+.job { border: 1px solid var(--pico-muted-border-color); border-radius: var(--pico-border-radius); padding: 1rem; margin-block: 1rem; }
+.job header { display: flex; justify-content: space-between; gap: 1rem; align-items: baseline; flex-wrap: wrap; margin-bottom: 0.5rem; }
+.job .log { font-family: var(--pico-font-family-monospace); font-size: 0.8em; max-height: 8rem; overflow-y: auto; color: var(--pico-muted-color); }
+.chart { width: 100%; height: 320px; }
+.chart.tall { height: 380px; }
+.answer .cite { font-size: 0.8em; padding: 0 0.2rem; }
+.sources li { margin-bottom: 0.5rem; }
+.sources li:target { background: var(--pico-mark-background-color); }
+.flash { padding: 0.75rem 1rem; border-radius: var(--pico-border-radius); margin-bottom: 1rem; }
+.flash.error { background: rgba(217, 83, 79, 0.15); border: 1px solid var(--echo-neg); }
+.flash.success { background: rgba(46, 158, 107, 0.15); border: 1px solid var(--echo-pos); }
+.htmx-indicator { display: none; }
+.htmx-request .htmx-indicator, .htmx-request.htmx-indicator { display: inline-block; }
+.row-actions { display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center; }
+.row-actions > * { margin-bottom: 0; }
+details.panel { border: 1px solid var(--pico-muted-border-color); border-radius: var(--pico-border-radius); padding: 0.75rem 1rem; }
+details.panel summary { font-weight: 600; }
+.inline-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 10rem), 1fr)); gap: 0 1rem; }
+.check-list { display: flex; flex-wrap: wrap; gap: 0.25rem 1.25rem; }
+.content-cell { max-width: 38rem; word-break: break-word; }
+.grid-auto { margin-bottom: 1.5rem; }
+fieldset[role="group"] > button { white-space: nowrap; }
+.row-actions select, .row-actions input:not([type="checkbox"]), .row-actions button, .row-actions form { width: auto; margin-bottom: 0; }
+.row-actions label { margin-bottom: 0; }

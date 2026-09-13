@@ -108,3 +108,20 @@ def test_make_batches_respects_limits():
     assert sum(len(b) for b in batches) == 40
     assert all(len(b) <= 60 for b in batches)
     assert len(batches) > 1
+
+
+async def test_unplaced_duplicate_drafts_are_grouped(sample_data, fake_llm_cls):
+    same = {"category": "pain_point", "title": "Crashes", "description": "d", "severity": 3}
+    batch = {
+        "sentiments": {},
+        "themes": [
+            {**same, "comments": [1]},
+            {**same, "comments": [2]},
+            {**same, "title": "crashes ", "comments": [5]},
+        ],
+    }
+    llm = fake_llm_cls(
+        map_reply=batch, reduce_reply={"summary": "s", "themes": [], "suggestions": []}
+    )
+    report = await Analyzer(llm).analyze(sample_data)
+    assert [(t.title, t.mentions) for t in report.themes] == [("Crashes", 3)]

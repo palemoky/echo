@@ -1,0 +1,7 @@
+<details>
+  <summary class="small">模型设置（默认使用 .env 配置）</summary>
+  <div class="inline-fields">
+    <label>Provider<select name="provider"><option value="">默认（{{ provider }}）</option>{% for p in providers %}<option value="{{ p }}">{{ p }}</option>{% endfor %}</select></label>
+    <label>Model<input name="model" placeholder="默认"></label>
+  </div>
+</details>

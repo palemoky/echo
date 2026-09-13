@@ -49,17 +49,9 @@ def register(app: typer.Typer, run) -> None:
     @app.command()
     def add(url: Annotated[str, typer.Argument(help="Account URL or single work URL.")]) -> None:
         """Track an account (all its works) or a single work."""
-        from echo_voc.store.db import get_sessionmaker
-        from echo_voc.sync import Syncer
+        from echo_voc import workspace
 
-        async def go():
-            syncer = Syncer(get_sessionmaker())
-            try:
-                return await syncer.add(url)
-            finally:
-                await syncer.aclose()
-
-        account, work = run(go())
+        account, work = run(workspace.add(url))
         if work is None:
             err.print(
                 f"[green]Tracking account[/green] #{account.id} {account.name or ''} "
@@ -78,71 +70,38 @@ def register(app: typer.Typer, run) -> None:
     @app.command()
     def accounts() -> None:
         """List tracked accounts."""
-        from sqlalchemy import func, select
+        from echo_voc import workspace
 
-        from echo_voc.store.db import get_sessionmaker
-        from echo_voc.store.models import Account, Feedback, Work
-
-        async def go():
-            async with get_sessionmaker()() as session:
-                q = (
-                    select(Account, func.count(func.distinct(Work.id)), func.count(Feedback.id))
-                    .outerjoin(Work, Work.account_id == Account.id)
-                    .outerjoin(Feedback, Feedback.work_id == Work.id)
-                    .group_by(Account.id)
-                    .order_by(Account.id)
-                )
-                return (await session.execute(q)).all()
-
-        table = Table("id", "platform", "name", "scope", "works", "feedback", "last sync")
-        for account, works, feedback in run(go()):
+        table = Table(
+            "id", "platform", "name", "scope", "works", "feedback", "danmaku", "last sync"
+        )
+        for a in run(workspace.accounts_overview()):
             table.add_row(
-                str(account.id),
-                account.platform,
-                account.name or account.external_id,
-                "all works" if account.track_all else "selected",
-                str(works),
-                str(feedback),
-                f"{account.last_synced_at:%Y-%m-%d %H:%M}" if account.last_synced_at else "-",
+                str(a.id),
+                a.platform,
+                a.name or a.external_id,
+                "all works" if a.track_all else "selected",
+                str(a.works),
+                str(a.feedback),
+                str(a.danmaku),
+                f"{a.last_synced_at:%Y-%m-%d %H:%M}" if a.last_synced_at else "-",
             )
         console.print(table)
 
     @app.command()
     def works(account: AccountRef = None, limit: int = 50) -> None:
         """List tracked works with comment / danmaku counts."""
-        from sqlalchemy import func, select
-
-        from echo_voc.store import repo
-        from echo_voc.store.db import get_sessionmaker
-        from echo_voc.store.models import Feedback, Work
-
-        async def go():
-            async with get_sessionmaker()() as session:
-                q = (
-                    select(
-                        Work,
-                        func.count(Feedback.id).filter(Feedback.kind != "danmaku"),
-                        func.count(Feedback.id).filter(Feedback.kind == "danmaku"),
-                    )
-                    .outerjoin(Feedback, Feedback.work_id == Work.id)
-                    .group_by(Work.id)
-                    .order_by(Work.published_at.desc().nulls_last())
-                    .limit(limit)
-                )
-                if account:
-                    q = q.where(Work.account_id == (await repo.find_account(session, account)).id)
-                return (await session.execute(q)).all()
+        from echo_voc import workspace
 
         table = Table("id", "published", "title", "comments", "danmaku", "synced")
-        for work, comments, danmaku in run(go()):
+        for w in run(workspace.works_overview(account=account, limit=limit)):
             table.add_row(
-                str(work.id),
-                f"{work.published_at:%Y-%m-%d}" if work.published_at else "-",
-                (work.title or work.external_id)[:48]
-                + (" (partial)" if (work.meta or {}).get("partial") else ""),
-                str(comments),
-                str(danmaku),
-                f"{work.comments_synced_at:%m-%d %H:%M}" if work.comments_synced_at else "-",
+                str(w.id),
+                f"{w.published_at:%Y-%m-%d}" if w.published_at else "-",
+                (w.title or w.external_id)[:48] + (" (partial)" if w.partial else ""),
+                str(w.comments),
+                str(w.danmaku),
+                f"{w.comments_synced_at:%m-%d %H:%M}" if w.comments_synced_at else "-",
             )
         console.print(table)
 
@@ -162,9 +121,8 @@ def register(app: typer.Typer, run) -> None:
         ] = None,
     ) -> None:
         """Incrementally sync tracked accounts / works into the local database."""
-        from echo_voc.store import repo
-        from echo_voc.store.db import get_sessionmaker
-        from echo_voc.sync import Syncer, SyncOptions, SyncStats
+        from echo_voc import workspace
+        from echo_voc.sync import SyncOptions
 
         options = SyncOptions(
             since=_since(since),
@@ -176,23 +134,10 @@ def register(app: typer.Typer, run) -> None:
         )
 
         async def go():
-            sessionmaker = get_sessionmaker()
             with err.status("Syncing…") as status:
-                syncer = Syncer(sessionmaker, on_progress=lambda m: status.update(m))
-                try:
-                    if work:
-                        async with sessionmaker() as session:
-                            work_id = (await repo.find_work(session, work)).id
-                        stats = SyncStats()
-                        await syncer.sync_work(work_id, options, stats)
-                        return stats
-                    if account:
-                        async with sessionmaker() as session:
-                            account_id = (await repo.find_account(session, account)).id
-                        return await syncer.sync_account(account_id, options)
-                    return await syncer.sync_all(options)
-                finally:
-                    await syncer.aclose()
+                return await workspace.sync(
+                    account=account, work=work, options=options, on_progress=status.update
+                )
 
         stats = run(go())
         err.print(
@@ -328,28 +273,18 @@ def register(app: typer.Typer, run) -> None:
         embedder: Annotated[Optional[str], typer.Option(help="ollama | openai")] = None,
     ) -> None:
         """Compute embeddings (default: Ollama bge-m3) for stored feedback."""
-        from echo_voc.embeddings import create_embedder
-        from echo_voc.label import embed_pending
-        from echo_voc.offline import COMMENT_KINDS
-        from echo_voc.store.db import get_sessionmaker
-        from echo_voc.store.query import FeedbackFilter
+        from echo_voc import workspace
 
         async def go():
-            sm = get_sessionmaker()
-            async with sm() as session:
-                flt = await FeedbackFilter.build(
-                    session,
+            with err.status("Embedding…") as status:
+                return await workspace.embed(
                     account=account,
                     work=work,
                     since=_since(since),
-                    kinds=kind or COMMENT_KINDS,
+                    kinds=kind,
+                    embedder_name=embedder,
+                    on_progress=status.update,
                 )
-            emb = create_embedder(embedder)
-            try:
-                with err.status("Embedding…") as status:
-                    return await embed_pending(sm, emb, flt, on_progress=status.update)
-            finally:
-                await emb.aclose()
 
         err.print(f"[green]Embedded {run(go())} items[/green]")
 
@@ -371,71 +306,30 @@ def register(app: typer.Typer, run) -> None:
         ] = False,
     ) -> None:
         """Label sentiment and assign topics for unlabeled feedback (incremental)."""
-        import os
+        from echo_voc import workspace
 
-        from sqlalchemy import func, select
-
-        from echo_voc.embeddings import create_embedder
-        from echo_voc.label import Labeler, estimate_tokens
-        from echo_voc.llm import create_llm
-        from echo_voc.offline import COMMENT_KINDS
-        from echo_voc.store.db import get_sessionmaker
-
-        sm = get_sessionmaker()
-
-        async def pending():
-            from echo_voc.store.query import FeedbackFilter
-
-            async with sm() as session:
-                flt = await FeedbackFilter.build(
-                    session,
-                    account=account,
-                    work=work,
-                    since=_since(since),
-                    kinds=kind or COMMENT_KINDS,
-                )
-                sub = (
-                    Labeler.pending_query(flt).limit(limit).subquery()
-                    if limit
-                    else Labeler.pending_query(flt).subquery()
-                )
-                count, chars = (
-                    await session.execute(
-                        select(func.count(), func.coalesce(func.sum(func.length(sub.c.content)), 0))
-                    )
-                ).one()
-            return flt, count, chars
-
-        flt, count, chars = run(pending())
-        if not count:
+        scope = dict(account=account, work=work, since=_since(since), kinds=kind, limit=limit)
+        estimate = run(workspace.estimate_label(**scope))
+        if not estimate.count:
             err.print("Nothing to label.")
             return
         err.print(
-            f"{count} items to label, ~{estimate_tokens(chars):,} tokens (map step, excluding "
+            f"{estimate.count} items to label, ~{estimate.tokens:,} tokens (map step, excluding "
             "topic matching)."
         )
         if not yes and not typer.confirm("Continue?", default=True):
             raise typer.Exit()
 
         async def go():
-            llm = create_llm(provider=provider, model=model)
-            emb = create_embedder()
-            try:
-                with err.status("Labeling…") as status:
-                    labeler = Labeler(
-                        sm,
-                        llm,
-                        emb,
-                        language=language
-                        or os.getenv("ECHO_LANGUAGE")
-                        or "the same language as the majority of the comments",
-                        concurrency=concurrency,
-                        on_progress=status.update,
-                    )
-                    return await labeler.run(flt, limit=limit)
-            finally:
-                await llm.aclose()
-                await emb.aclose()
+            with err.status("Labeling…") as status:
+                return await workspace.label(
+                    **scope,
+                    provider=provider,
+                    model=model,
+                    lang=language,
+                    concurrency=concurrency,
+                    on_progress=status.update,
+                )
 
         stats = run(go())
         err.print(

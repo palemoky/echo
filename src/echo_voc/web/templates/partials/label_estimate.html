@@ -1,0 +1,13 @@
+{% if not estimate.count %}
+<p class="muted">没有需要打标的数据。</p>
+{% else %}
+<div class="flash success">
+  待打标 <b>{{ estimate.count|num }}</b> 条，约 <b>{{ estimate.tokens|num }}</b> tokens（仅分析步骤，不含问题归类）。
+  <form hx-post="/jobs/label" hx-target="#account-jobs" hx-swap="afterbegin" hx-on::after-request="document.getElementById('label-estimate').innerHTML = ''" style="margin: 0.5rem 0 0">
+    {% for key, value in form.items() %}<input type="hidden" name="{{ key }}" value="{{ value }}">{% endfor %}
+    <div class="inline-fields"><label>语言<input name="language" value="{{ language }}" placeholder="默认跟随评论语言"></label></div>
+    {% include "partials/llm_fields.html" %}
+    <button type="submit">确认开始打标</button>
+  </form>
+</div>
+{% endif %}

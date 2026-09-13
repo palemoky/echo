@@ -1,0 +1,25 @@
+<div class="job" id="job-{{ job.id }}"
+  {% if not job.finished %}hx-get="/jobs/{{ job.id }}" hx-trigger="every 1s" hx-swap="outerHTML"{% endif %}>
+  <header>
+    <strong>{{ job.title }}</strong>
+    <span><span class="badge {{ job.status }}">{{ job.status|status }}</span>
+      <span class="muted small">{{ job.created_at|dt("%H:%M:%S") }}</span></span>
+  </header>
+  {% if not job.finished %}
+    <progress></progress>
+    {% if job.messages %}<div class="log">{% for m in job.messages %}<div>{{ m }}</div>{% endfor %}</div>{% endif %}
+  {% elif job.status == "failed" %}
+    <div class="flash error">{{ job.error }}</div>
+  {% else %}
+    {% set r = job.result %}
+    {% if job.kind == "sync" %}{% include "partials/result_sync.html" %}
+    {% elif job.kind == "embed" %}<p>已计算 <b>{{ r|num }}</b> 条向量。</p>
+    {% elif job.kind == "label" %}{% include "partials/result_label.html" %}
+    {% elif job.kind == "report" %}{% with report = r %}{% include "partials/report.html" %}{% endwith %}
+    {% elif job.kind == "danmaku" %}{% include "partials/danmaku.html" %}
+    {% elif job.kind == "ask" %}{% with result = r %}{% include "partials/answer.html" %}{% endwith %}
+    {% elif job.kind == "snapshot" %}{% include "partials/result_snapshots.html" %}
+    {% elif job.kind == "trend" %}{% include "partials/trend.html" %}
+    {% endif %}
+  {% endif %}
+</div>

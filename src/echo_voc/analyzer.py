@@ -305,11 +305,18 @@ class Analyzer:
             if theme := build(t.category, t.title, t.description, t.severity, indexes):
                 themes.append(theme)
 
-        # Keep drafts the model forgot to place instead of silently dropping them.
+        # Keep drafts the model forgot to place instead of silently dropping them; drafts with the
+        # same category and title (common across batches) still become one theme.
+        leftovers: dict[tuple[str, str], list[int]] = {}
         for i, (d, _) in enumerate(drafts):
             if i not in claimed:
-                if theme := build(d.category, d.title, d.description, d.severity, [i]):
-                    themes.append(theme)
+                key = (d.category.value, " ".join(d.title.lower().split()))
+                leftovers.setdefault(key, []).append(i)
+        for indexes in leftovers.values():
+            d = drafts[indexes[0]][0]
+            severity = max((drafts[i][0].severity or 0) for i in indexes) or None
+            if theme := build(d.category, d.title, d.description, severity, indexes):
+                themes.append(theme)
 
         themes.sort(
             key=lambda t: (CATEGORY_ORDER.index(t.category), -t.mentions, -(t.severity or 0))

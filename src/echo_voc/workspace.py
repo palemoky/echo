@@ -1,9 +1,10 @@
-"""High-level operations on the local workspace, shared by the CLI and the MCP server."""
+"""High-level operations on the local workspace, shared by the CLI, web UI and MCP server."""
 
 from __future__ import annotations
 
 import logging
 import os
+from collections.abc import Callable
 from datetime import datetime, timedelta
 
 from pydantic import BaseModel
@@ -14,6 +15,7 @@ from echo_voc.embeddings import create_embedder
 from echo_voc.errors import EchoError
 from echo_voc.llm import create_llm
 from echo_voc.memory.snapshots import (
+    Comparison,
     compare,
     comparison_text,
     render_trend,
@@ -29,9 +31,247 @@ from echo_voc.timeutil import parse_period, utcnow
 
 log = logging.getLogger(__name__)
 
+COMMENT_KINDS = ["comment", "reply", "review"]
+Progress = Callable[[str], None] | None
+
 
 def language(value: str | None, fallback: str = "the language of the topics") -> str:
     return value or os.getenv("ECHO_LANGUAGE") or fallback
+
+
+# ---- tracking & sync --------------------------------------------------------------------------
+
+
+async def add(url: str):
+    """Track an account or a single work. Returns (Account, Work | None)."""
+    from echo_voc.sync import Syncer
+
+    syncer = Syncer(get_sessionmaker())
+    try:
+        return await syncer.add(url)
+    finally:
+        await syncer.aclose()
+
+
+async def sync(
+    *,
+    account: str | None = None,
+    work: str | None = None,
+    options=None,
+    on_progress: Progress = None,
+):
+    """Sync one work, one account, or everything. Returns SyncStats."""
+    from echo_voc.sync import Syncer, SyncOptions, SyncStats
+
+    options = options or SyncOptions()
+    sm = get_sessionmaker()
+    syncer = Syncer(sm, on_progress=on_progress)
+    try:
+        if work:
+            async with sm() as session:
+                work_id = (await repo.find_work(session, work)).id
+            stats = SyncStats()
+            await syncer.sync_work(work_id, options, stats)
+            return stats
+        if account:
+            async with sm() as session:
+                account_id = (await repo.find_account(session, account)).id
+            return await syncer.sync_account(account_id, options)
+        return await syncer.sync_all(options)
+    finally:
+        await syncer.aclose()
+
+
+class AccountRow(BaseModel):
+    id: int
+    platform: str
+    external_id: str
+    name: str | None
+    url: str | None
+    track_all: bool
+    works: int
+    feedback: int
+    danmaku: int
+    labeled: int
+    last_synced_at: datetime | None
+
+
+async def accounts_overview() -> list[AccountRow]:
+    from echo_voc.store.models import Account
+
+    async with get_sessionmaker()() as session:
+        q = (
+            select(
+                Account,
+                func.count(func.distinct(Work.id)),
+                func.count(Feedback.id).filter(Feedback.kind != "danmaku"),
+                func.count(Feedback.id).filter(Feedback.kind == "danmaku"),
+                func.count(Feedback.labeled_at),
+            )
+            .outerjoin(Work, Work.account_id == Account.id)
+            .outerjoin(Feedback, Feedback.work_id == Work.id)
+            .group_by(Account.id)
+            .order_by(Account.id)
+        )
+        return [
+            AccountRow(
+                id=a.id,
+                platform=a.platform,
+                external_id=a.external_id,
+                name=a.name,
+                url=a.url,
+                track_all=a.track_all,
+                works=w,
+                feedback=f,
+                danmaku=d,
+                labeled=lab,
+                last_synced_at=a.last_synced_at,
+            )
+            for a, w, f, d, lab in (await session.execute(q)).all()
+        ]
+
+
+class WorkRow(BaseModel):
+    id: int
+    account_id: int
+    platform: str
+    external_id: str
+    title: str | None
+    url: str | None
+    published_at: datetime | None
+    comments: int
+    danmaku: int
+    partial: bool
+    comments_synced_at: datetime | None
+    danmaku_synced_at: datetime | None
+
+
+async def works_overview(*, account: str | None = None, limit: int = 200) -> list[WorkRow]:
+    async with get_sessionmaker()() as session:
+        q = (
+            select(
+                Work,
+                func.count(Feedback.id).filter(Feedback.kind != "danmaku"),
+                func.count(Feedback.id).filter(Feedback.kind == "danmaku"),
+            )
+            .outerjoin(Feedback, Feedback.work_id == Work.id)
+            .group_by(Work.id)
+            .order_by(Work.published_at.desc().nulls_last())
+            .limit(limit)
+        )
+        if account:
+            q = q.where(Work.account_id == (await repo.find_account(session, account)).id)
+        return [
+            WorkRow(
+                id=w.id,
+                account_id=w.account_id,
+                platform=w.platform,
+                external_id=w.external_id,
+                title=w.title,
+                url=w.url,
+                published_at=w.published_at,
+                comments=c,
+                danmaku=d,
+                partial=bool((w.meta or {}).get("partial")),
+                comments_synced_at=w.comments_synced_at,
+                danmaku_synced_at=w.danmaku_synced_at,
+            )
+            for w, c, d in (await session.execute(q)).all()
+        ]
+
+
+# ---- embeddings & labeling ---------------------------------------------------------------------
+
+
+class LabelEstimate(BaseModel):
+    count: int
+    chars: int
+    tokens: int
+
+
+async def feedback_filter(
+    session, *, account=None, work=None, since=None, kinds=None
+) -> FeedbackFilter:
+    return await FeedbackFilter.build(
+        session, account=account, work=work, since=since, kinds=kinds or COMMENT_KINDS
+    )
+
+
+async def estimate_label(
+    *, account=None, work=None, since=None, kinds=None, limit: int | None = None
+) -> LabelEstimate:
+    from echo_voc.label import Labeler, estimate_tokens
+
+    async with get_sessionmaker()() as session:
+        flt = await feedback_filter(session, account=account, work=work, since=since, kinds=kinds)
+        query = Labeler.pending_query(flt)
+        sub = (query.limit(limit) if limit else query).subquery()
+        count, chars = (
+            await session.execute(
+                select(func.count(), func.coalesce(func.sum(func.length(sub.c.content)), 0))
+            )
+        ).one()
+    return LabelEstimate(count=count, chars=chars, tokens=estimate_tokens(chars))
+
+
+async def label(
+    *,
+    account=None,
+    work=None,
+    since=None,
+    kinds=None,
+    limit: int | None = None,
+    provider: str | None = None,
+    model: str | None = None,
+    lang: str | None = None,
+    concurrency: int = 4,
+    on_progress: Progress = None,
+):
+    """Label pending feedback. Returns LabelStats."""
+    from echo_voc.label import Labeler
+
+    sm = get_sessionmaker()
+    async with sm() as session:
+        flt = await feedback_filter(session, account=account, work=work, since=since, kinds=kinds)
+    llm = create_llm(provider=provider, model=model)
+    embedder = create_embedder()
+    try:
+        labeler = Labeler(
+            sm,
+            llm,
+            embedder,
+            language=language(lang, "the same language as the majority of the comments"),
+            concurrency=concurrency,
+            on_progress=on_progress,
+        )
+        return await labeler.run(flt, limit=limit)
+    finally:
+        await llm.aclose()
+        await embedder.aclose()
+
+
+async def embed(
+    *,
+    account=None,
+    work=None,
+    since=None,
+    kinds=None,
+    embedder_name: str | None = None,
+    on_progress: Progress = None,
+) -> int:
+    from echo_voc.label import embed_pending
+
+    sm = get_sessionmaker()
+    async with sm() as session:
+        flt = await feedback_filter(session, account=account, work=work, since=since, kinds=kinds)
+    embedder = create_embedder(embedder_name)
+    try:
+        return await embed_pending(sm, embedder, flt, on_progress=on_progress)
+    finally:
+        await embedder.aclose()
+
+
+# ---- questions & topics ------------------------------------------------------------------------
 
 
 async def ask(
@@ -170,7 +410,16 @@ async def snapshots(
     return saved, warnings
 
 
-async def trend(
+class TrendData(BaseModel):
+    name: str
+    labels: list[str]
+    snapshots: list[dict]  # label, period_start, period_end, stats, summary
+    comparisons: list[Comparison]
+    review: str | None = None
+    warnings: list[str] = []
+
+
+async def trend_data(
     *,
     account: str,
     labels: list[str] | None = None,
@@ -180,8 +429,8 @@ async def trend(
     provider: str | None = None,
     model: str | None = None,
     lang: str | None = None,
-) -> tuple[str, list[str]]:
-    """Compare snapshots; returns (markdown, warnings)."""
+) -> TrendData:
+    """Compare snapshots (chronological) and optionally write an LLM review."""
     async with get_sessionmaker()() as session:
         acc = await repo.find_account(session, account)
         q = select(Snapshot).where(Snapshot.account_id == acc.id, Snapshot.work_id.is_(None))
@@ -225,7 +474,29 @@ async def trend(
             warnings += await _remember(
                 acc.id, [(f"{name} trend {span}: {review}", {"period": span, "type": "trend"})]
             )
-    return render_trend(name, comparisons, review), warnings
+    return TrendData(
+        name=name,
+        labels=[s.label for s in snaps],
+        snapshots=[
+            {
+                "label": s.label,
+                "period_start": s.period_start,
+                "period_end": s.period_end,
+                "stats": s.stats,
+                "summary": s.summary,
+            }
+            for s in snaps
+        ],
+        comparisons=comparisons,
+        review=review,
+        warnings=warnings,
+    )
+
+
+async def trend(**kwargs) -> tuple[str, list[str]]:
+    """Compare snapshots; returns (markdown, warnings)."""
+    data = await trend_data(**kwargs)
+    return render_trend(data.name, data.comparisons, data.review), data.warnings
 
 
 async def recall(query: str, *, account: str | None = None, limit: int = 10) -> list[str]:

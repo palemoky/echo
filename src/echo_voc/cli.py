@@ -167,6 +167,40 @@ cli_store.register(app, _run)
 
 
 @app.command()
+def web(
+    host: Annotated[
+        str, typer.Option(help="Bind address; keep 127.0.0.1 unless you set a password.")
+    ] = "127.0.0.1",
+    port: Annotated[int, typer.Option()] = 8765,
+    open_browser: Annotated[
+        bool, typer.Option("--open/--no-open", help="Open the browser.")
+    ] = True,
+) -> None:
+    """Start the local web UI."""
+    try:
+        import uvicorn
+
+        from echo_voc.web.app import create_app
+    except ImportError:
+        err.print("[red]Error:[/red] the web UI needs extra dependencies: uv sync --extra web")
+        raise typer.Exit(1) from None
+
+    if host not in {"127.0.0.1", "localhost", "::1"} and not os.getenv("ECHO_WEB_PASSWORD"):
+        err.print(
+            "[yellow]warning:[/yellow] the web UI has no login and can spend your LLM credits; "
+            "set ECHO_WEB_PASSWORD before exposing it beyond this machine."
+        )
+    url = f"http://{'127.0.0.1' if host in {'0.0.0.0', '::'} else host}:{port}"
+    err.print(f"echo web UI: [bold]{url}[/bold]  (Ctrl+C to stop)")
+    if open_browser:
+        import threading
+        import webbrowser
+
+        threading.Timer(1.0, lambda: webbrowser.open(url)).start()
+    uvicorn.run(create_app(bind_host=host), host=host, port=port, log_level="warning")
+
+
+@app.command()
 def mcp(
     transport: Annotated[str, typer.Option(help="stdio | streamable-http")] = "stdio",
 ) -> None:

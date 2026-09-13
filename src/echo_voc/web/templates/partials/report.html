@@ -1,0 +1,30 @@
+<section class="report">
+  <h3>{{ report.title or report.target }}</h3>
+  <p class="muted small">{{ report.platform|platform }} · {{ report.total_comments|num }} 条 ·
+    {% if report.average_rating is not none %}平均 {{ report.average_rating }} ★ · {% endif %}{{ report.model }} · {{ report.generated_at|dt }}</p>
+  {% with s = report.sentiment %}{% include "partials/sentiment.html" %}{% endwith %}
+  <h4>总结</h4>
+  <p>{{ report.summary }}</p>
+  {% if report.suggestions %}
+  <h4>建议行动</h4>
+  <ol>{% for item in report.suggestions %}<li>{{ item }}</li>{% endfor %}</ol>
+  {% endif %}
+  {% for cat in ["pain_point", "feature_request", "praise", "question"] %}
+    {% set themes = report.themes | selectattr("category.value", "equalto", cat) | list %}
+    {% if themes %}
+    <h4>{{ cat|category }}</h4>
+    {% for t in themes %}
+    <div class="theme-card {{ cat }}">
+      <strong>{{ t.title }}</strong>
+      <span class="muted small">{{ t.mentions }} 次提及（{{ share(t.mentions, report.total_comments)|pct }}）{% if t.severity %} · 严重度 {{ t.severity }}/5{% endif %}</span>
+      <p class="small">{{ t.description }}</p>
+      {% for ev in t.evidence %}
+      <blockquote class="evidence">{{ ev.content|truncate(260) }}
+        <footer class="muted small">{% if ev.rating is not none %}{{ ev.rating|round|int }}★ {% endif %}{% if ev.likes %}👍 {{ ev.likes|num }}{% endif %}</footer>
+      </blockquote>
+      {% endfor %}
+    </div>
+    {% endfor %}
+    {% endif %}
+  {% endfor %}
+</section>

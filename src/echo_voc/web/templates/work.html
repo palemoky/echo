@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block title %}{{ work.title or work.external_id }}{% endblock %}
+{% block content %}
+<hgroup>
+  <h2>{{ work.title or work.external_id }}</h2>
+  <p><a href="/accounts/{{ account.id }}">{{ account.name or account.external_id }}</a> · {{ work.platform|platform }} · 发布 {{ work.published_at|dt("%Y-%m-%d") }}
+    {% if work.url %} · <a href="{{ work.url }}" target="_blank" rel="noopener">打开原页面</a>{% endif %}</p>
+</hgroup>
+<div class="grid-auto">
+  {% for k in ["comment", "reply", "review", "danmaku"] %}{% if counts.get(k) %}<div class="stat"><span class="muted small">{{ k|kind }}</span><b>{{ counts[k]|num }}</b></div>{% endif %}{% endfor %}
+</div>
+
+<article>
+  <div class="row-actions">
+    <button hx-post="/jobs/sync" hx-vals='{"work": "{{ work.id }}"{% if work.platform == "bilibili" %}, "danmaku": "true"{% endif %}}' hx-target="#work-jobs" hx-swap="afterbegin">同步此作品</button>
+    <button class="secondary" hx-post="/jobs/report" hx-vals='{"work": "{{ work.id }}"}' hx-target="#work-jobs" hx-swap="afterbegin">评论报告</button>
+    {% if work.platform == "bilibili" %}
+    <form class="row-actions" hx-post="/jobs/danmaku" hx-target="#work-jobs" hx-swap="afterbegin">
+      <input type="hidden" name="work" value="{{ work.id }}">
+      <select name="bucket" aria-label="时间粒度"><option value="15">15 秒</option><option value="30" selected>30 秒</option><option value="60">60 秒</option></select>
+      <label class="nowrap"><input type="checkbox" name="overall" value="true" checked> 整体主题分析</label>
+      <button class="secondary" type="submit" {% if not counts.get("danmaku") %}disabled title="先同步弹幕"{% endif %}>弹幕分析</button>
+    </form>
+    {% endif %}
+  </div>
+  <div id="work-jobs"></div>
+</article>
+
+<article>
+  <h3>反馈明细</h3>
+  <form class="inline-fields" hx-get="/works/{{ work.id }}/feedback" hx-target="#feedback" hx-trigger="change, keyup changed delay:400ms from:input[name=q]">
+    <label>类型<select name="kind"><option value="">评论与评价</option>{% for k in ["comment", "reply", "review", "danmaku"] %}{% if counts.get(k) %}<option value="{{ k }}">{{ k|kind }}</option>{% endif %}{% endfor %}</select></label>
+    <label>情感<select name="sentiment"><option value="">全部</option><option value="negative">负面</option><option value="neutral">中性</option><option value="positive">正面</option></select></label>
+    <label>排序<select name="order"><option value="newest">最新</option><option value="likes">点赞</option><option value="progress">视频时间（弹幕）</option></select></label>
+    <label>搜索<input name="q" type="search" placeholder="关键词"></label>
+  </form>
+  <div id="feedback" hx-get="/works/{{ work.id }}/feedback" hx-trigger="load, data-changed from:body"><progress></progress></div>
+</article>
+{% endblock %}

@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block title %}问答{% endblock %}
+{% block content %}
+<h2>向数据提问</h2>
+<p class="muted">排行类问题（"反馈最多的问题"）按问题库精确计数并与上一周期对比；其他问题用语义检索找到相关评论后回答。回答中的 #编号 可点击查看原文。</p>
+<article>
+  <form hx-post="/jobs/ask" hx-target="#answers" hx-swap="afterbegin">
+    <label>问题<textarea name="question" rows="2" required placeholder="最近1个月用户反馈较多的问题是什么？"></textarea></label>
+    <div class="inline-fields">
+      <label>账号<select name="account"><option value="">全部账号</option>{% for a in accounts %}<option value="{{ a.id }}">{{ a.name or a.external_id }}（{{ a.platform|platform }}）</option>{% endfor %}</select></label>
+      <label style="align-self: end"><input type="checkbox" name="memory" value="true" checked> 参考历史记忆（mem0）</label>
+    </div>
+    {% include "partials/llm_fields.html" %}
+    <div class="row-actions">
+      <button type="submit">提问</button>
+      {% for example in ["最近1个月用户反馈较多的问题是什么？", "用户最想要什么新功能？", "有人抱怨卡顿或闪退吗？"] %}
+      <button type="button" class="outline secondary small" onclick="this.form.question.value = this.textContent">{{ example }}</button>
+      {% endfor %}
+    </div>
+  </form>
+</article>
+<div id="answers"></div>
+{% endblock %}

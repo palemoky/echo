@@ -1,0 +1,2 @@
+<p>同步了 <b>{{ r.works_synced }}</b> 个作品（新作品 {{ r.works_new }}），新增评论 <b>{{ r.comments_new|num }}</b>，新增弹幕 <b>{{ r.danmaku_new|num }}</b>。</p>
+{% if r.errors %}<details><summary>{{ r.errors|length }} 个警告</summary><ul class="small">{% for e in r.errors %}<li>{{ e }}</li>{% endfor %}</ul></details>{% endif %}

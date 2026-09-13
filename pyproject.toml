@@ -25,7 +25,8 @@ store = [
     "sqlalchemy[asyncio]>=2.0.30",
 ]
 memory = ["mem0ai>=2.0", "ollama>=0.4"]
-all = ["echo-voc[store,memory]"]
+web = ["fastapi>=0.115", "jinja2>=3.1", "markdown-it-py>=3.0", "python-multipart>=0.0.9", "uvicorn[standard]>=0.30"]
+all = ["echo-voc[store,memory,web]"]
 
 [project.scripts]
 echo-voc = "echo_voc.cli:app"

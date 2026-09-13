@@ -17,7 +17,7 @@ AI-powered Voice of Customer (VOC) engine built on MCP. Extract product insights
 - **弹幕分析**（B 站）：弹幕密度时间轴、热点时刻识别与解读
 - **RAG 问答**：直接问"最近 1 个月用户反馈较多的问题是什么"，排行类问题走 SQL 精确计数，开放问题走 bge-m3 向量检索，回答带原文引用
 - **产品记忆**：按月份 / App 版本保存反馈快照，自动对比新增、上升、已解决的问题；结论写入 mem0 长期记忆
-- **三种用法**：命令行、Python 库、MCP Server（接入 Claude Code / Claude Desktop / Cursor / Cherry Studio 等）
+- **四种用法**：网页界面、命令行、Python 库、MCP Server（接入 Claude Code / Claude Desktop / Cursor / Cherry Studio 等）
 
 ## 快速开始
 
@@ -47,6 +47,30 @@ uv run echo-voc analyze comments.json -f json -o report.json
 ```
 
 其他命令：`echo-voc sources`（支持的平台）、`echo-voc providers`（模型预设）、`echo-voc --help`。
+
+### 网页界面
+
+不想记命令的话，所有功能都可以在本地网页中完成：
+
+```bash
+uv sync --all-extras
+uv run echo-voc web          # 自动打开 http://127.0.0.1:8765
+```
+
+| 页面 | 功能 |
+| --- | --- |
+| 概览 | 数据统计、粘贴链接添加账号/作品、后台任务与同步记录 |
+| 账号 / 作品 | 增量同步（弹幕、楼中楼、全量重扫）、计算向量、打标前估算 token、生成报告、按类型/情感/关键词浏览原文 |
+| 分析 | 任意链接实时分析（不入库） |
+| 弹幕 | 弹幕密度柱状图（高亮热点，点击跳转到视频对应时间）、热点解读、整体主题 |
+| 问答 | RAG 提问，排行结果表格、引用编号可点击定位原文、参考 mem0 记忆 |
+| 问题 | 按账号 / 时间窗 / 类型的问题排行，点击查看原文 |
+| 趋势 | 生成月度或版本快照、勾选对比（情感折线图、问题提及柱状图、变化表）、搜索长期记忆 |
+| 设置 | 数据库、Ollama/bge-m3、mem0、模型与凭据的连接状态（不显示密钥内容） |
+
+耗时操作（同步、打标、报告等）在后台任务中执行，页面实时显示进度；同步和打标各自排队执行，避免并发触发平台风控或重复消耗 token。
+
+安全说明：网页界面没有登录系统，默认只监听 `127.0.0.1`，并拒绝跨站请求和非本机 Host（防止恶意网页或 DNS 重绑定调用你的本地服务）。如需在局域网中使用，请设置 `ECHO_WEB_PASSWORD`（启用 HTTP Basic 认证）和 `ECHO_WEB_ALLOWED_HOSTS`，再以 `--host 0.0.0.0` 启动。
 
 ### 报告格式（示意）
 
@@ -282,6 +306,7 @@ src/echo_voc/
 ├── offline.py          # 基于数据库的报告
 ├── workspace.py        # CLI 与 MCP 共用的本地工作区操作
 ├── report.py / prompts.py
+├── web/                # 网页界面：FastAPI 路由、Jinja2 模板、HTMX、ECharts、后台任务
 ├── cli.py / cli_store.py
 └── mcp_server.py
 ```
@@ -316,7 +341,8 @@ uv run ruff check src tests && uv run ruff format src tests
 - [ ] 更多平台：Google Play、小红书、抖音、淘宝/京东商品评价、Reddit、Steam、GitHub Issues、V2EX
 - [ ] App Store 完整历史评论（突破 RSS 500 条限制）
 - [ ] 多链接对比分析（竞品对比）
-- [ ] 报告多语言标题、HTML 报告与 Web UI（FastAPI + React）
+- [x] 本地网页界面（FastAPI + HTMX）
+- [ ] 报告多语言标题、导出 HTML/PDF 报告
 - [ ] 定时任务 + 飞书/Slack/邮件推送
 
 ## 注意事项
@@ -326,3 +352,5 @@ uv run ruff check src tests && uv run ruff format src tests
 ## License
 
 [AGPL-3.0](LICENSE)
+
+网页界面内置的第三方前端资源：[htmx](https://htmx.org)（0BSD）、[Apache ECharts](https://echarts.apache.org)（Apache-2.0）、[Pico CSS](https://picocss.com)（MIT）。

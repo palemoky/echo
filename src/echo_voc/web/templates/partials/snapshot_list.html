@@ -1,0 +1,52 @@
+<div id="snapshot-list" hx-get="/trends/snapshots?account={{ account.id }}" hx-trigger="snapshots-changed from:body" hx-target="#snapshots">
+<h3>{{ account.name or account.external_id }} 的快照</h3>
+{% if snapshots %}
+<form hx-post="/jobs/trend" hx-target="#trend-jobs" hx-swap="afterbegin">
+  <input type="hidden" name="account" value="{{ account.id }}">
+  <div class="table-wrap"><table>
+    <thead><tr><th>对比</th><th>快照</th><th>时间</th><th>条数</th><th>情感</th><th>头号问题</th><th>摘要</th></tr></thead>
+    <tbody>
+    {% for snap in snapshots %}
+    {% set st = snap.stats %}
+    <tr>
+      <td><input type="checkbox" name="labels" value="{{ snap.label }}" {% if loop.revindex <= 3 %}checked{% endif %} aria-label="选择 {{ snap.label }}"></td>
+      <td class="nowrap"><b>{{ snap.label }}</b></td>
+      <td class="nowrap small">{{ snap.period_start|dt("%Y-%m-%d") }} → {{ snap.period_end|dt("%Y-%m-%d") }}</td>
+      <td>{{ st.total|num }}<div class="small muted">打标 {{ st.labeled|num }}</div></td>
+      <td style="min-width: 9rem">{% with s = namespace(positive=st.sentiment.get("positive", 0), neutral=st.sentiment.get("neutral", 0), negative=st.sentiment.get("negative", 0)) %}{% include "partials/sentiment.html" %}{% endwith %}</td>
+      <td class="small">{{ st.topics[0].title if st.topics else "-" }}</td>
+      <td class="small content-cell">{{ snap.summary or "" }}</td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+  <div class="row-actions">
+    <label class="nowrap"><input type="checkbox" name="narrative" value="true" checked> LLM 趋势解读</label>
+    <label class="nowrap"><input type="checkbox" name="remember" value="true" checked> 写入记忆</label>
+    <button type="submit" {% if snapshots|length < 2 %}disabled title="至少需要两个快照"{% endif %}>对比所选快照</button>
+  </div>
+  <p class="small muted">按勾选顺序（从上到下即从早到晚）对比。</p>
+</form>
+{% else %}<p class="muted">还没有快照，先在下方生成。</p>{% endif %}
+
+<details class="panel" {% if not snapshots %}open{% endif %}>
+  <summary>生成快照</summary>
+  <form hx-post="/jobs/snapshot" hx-target="#trend-jobs" hx-swap="afterbegin">
+    <input type="hidden" name="account" value="{{ account.id }}">
+    <div class="inline-fields">
+      <label>按月（从何时开始）<select name="monthly"><option value="">不按月</option><option value="3m">近 3 个月</option><option value="6m" selected>近 6 个月</option><option value="1y">近 1 年</option></select></label>
+      <label>指定时期（可多个，逗号分隔）<input name="periods" placeholder="2026-08, 2026-08-01..2026-08-15"></label>
+    </div>
+    <div class="check-list">
+      {% if account.platform == "appstore" %}<label><input type="checkbox" name="by_version" value="true"> 按 App 版本</label>{% endif %}
+      <label><input type="checkbox" name="summary" value="true" checked> LLM 摘要</label>
+      <label><input type="checkbox" name="remember" value="true" checked> 写入记忆</label>
+    </div>
+    <details><summary class="small">语言与模型</summary>
+      <label>语言<input name="language" value="{{ language }}" placeholder="默认跟随问题语言"></label>
+      {% include "partials/llm_fields.html" %}
+    </details>
+    <button type="submit">生成</button>
+  </form>
+</details>
+</div>

@@ -1,0 +1,26 @@
+{% set data = r.data %}
+<section>
+  <h3>{{ data.name }}：{{ data.labels|join(" → ") }}</h3>
+  {% if data.review %}<div>{{ data.review|markdown }}</div>{% endif %}
+  {% for w in data.warnings %}<div class="flash error small">{{ w }}</div>{% endfor %}
+  <div class="grid-auto" style="grid-template-columns: repeat(auto-fit, minmax(min(100%, 22rem), 1fr))">
+    <div><h4>情感占比</h4><div class="chart" data-chart='{{ r.sentiment_chart|tojson }}'></div></div>
+    <div><h4>主要问题提及</h4><div class="chart tall" data-chart='{{ r.topics_chart|tojson }}'></div></div>
+  </div>
+  {% set icons = {"new": "🆕 新出现", "rising": "📈 上升", "falling": "📉 下降", "gone": "✅ 消失", "stable": "➖ 持平"} %}
+  {% for c in data.comparisons %}
+  <h4>{{ c.before }} → {{ c.after }}</h4>
+  <p class="small muted">条数 {{ c.total_before }} → {{ c.total_after }} · 正面 {{ "%+.1f"|format(c.sentiment_delta.get("positive", 0)) }}pp · 负面 {{ "%+.1f"|format(c.sentiment_delta.get("negative", 0)) }}pp{% if c.rating_before or c.rating_after %} · 评分 {{ c.rating_before or "-" }} → {{ c.rating_after or "-" }}{% endif %}</p>
+  {% if c.changes %}
+  <div class="table-wrap"><table>
+    <thead><tr><th>变化</th><th>问题</th><th>类型</th><th>之前</th><th>之后</th></tr></thead>
+    <tbody>
+    {% for ch in c.changes %}
+    <tr><td class="nowrap">{{ icons[ch.status] }}</td><td>{{ ch.title }}</td><td><span class="badge {{ ch.category }}">{{ ch.category|category }}</span></td>
+      <td>{{ ch.before }}（{{ ch.share_before|pct }}）</td><td>{{ ch.after }}（{{ ch.share_after|pct }}）</td></tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+  {% else %}<p class="muted small">没有足够的问题数据可对比（需要先打标）。</p>{% endif %}
+  {% endfor %}
+</section>

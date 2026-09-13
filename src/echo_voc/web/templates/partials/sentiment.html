@@ -1,0 +1,7 @@
+{% set total = (s.positive + s.neutral + s.negative) %}
+<div class="sentiment-bar" title="正面 {{ s.positive }} / 中性 {{ s.neutral }} / 负面 {{ s.negative }}">
+  <span class="positive" style="width: {{ share(s.positive, total) * 100 }}%"></span>
+  <span class="neutral" style="width: {{ share(s.neutral, total) * 100 }}%"></span>
+  <span class="negative" style="width: {{ share(s.negative, total) * 100 }}%"></span>
+</div>
+<div class="legend"><span>👍 正面 {{ share(s.positive, total)|pct }}</span><span>😐 中性 {{ share(s.neutral, total)|pct }}</span><span>👎 负面 {{ share(s.negative, total)|pct }}</span></div>

@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block title %}设置{% endblock %}
+{% block content %}
+<h2>设置与状态</h2>
+<p class="muted">配置通过项目目录下的 <code>.env</code> 文件或环境变量设置，修改后重启 <code>echo-voc web</code> 生效。页面不会显示任何密钥内容。</p>
+<article>
+  <h3>运行状态</h3>
+  <div class="table-wrap"><table>
+    <tbody>
+    {% for key, label in [("database", "数据库"), ("embedder", "向量模型"), ("memory", "长期记忆")] %}
+    {% set ok, detail = checks[key] %}
+    <tr><th>{{ label }}</th><td>{{ "✅" if ok else "⚠️" }}</td><td>{{ detail }}</td></tr>
+    {% endfor %}
+    <tr><th>数据库地址</th><td></td><td><code>{{ database }}</code></td></tr>
+    </tbody>
+  </table></div>
+</article>
+<article>
+  <h3>大模型</h3>
+  <div class="table-wrap"><table><tbody>
+    <tr><th>Provider</th><td><code>{{ llm.provider }}</code></td><td class="small muted">ECHO_PROVIDER</td></tr>
+    <tr><th>Model</th><td><code>{{ llm.model }}</code></td><td class="small muted">ECHO_MODEL</td></tr>
+    <tr><th>Base URL</th><td><code>{{ llm.base_url }}</code></td><td class="small muted">ECHO_BASE_URL</td></tr>
+    <tr><th>API Key</th><td>{{ "✅ 已设置" if llm.key_set else "⚠️ 未设置" }}</td><td class="small muted">{{ llm.key_env or "无需" }}</td></tr>
+    <tr><th>记忆模式</th><td><code>{{ "抽取合并" if memory_infer.lower() in ["1", "true", "yes", "on"] else "原文存储" }}</code></td><td class="small muted">ECHO_MEMORY_INFER</td></tr>
+  </tbody></table></div>
+</article>
+<article>
+  <h3>平台凭据</h3>
+  <div class="table-wrap"><table><tbody>
+    <tr><th>YOUTUBE_API_KEY</th><td>{{ "✅ 已设置" if credentials.YOUTUBE_API_KEY else "⚠️ 未设置（YouTube 需要）" }}</td></tr>
+    <tr><th>BILIBILI_COOKIE</th><td>{{ "✅ 已设置" if credentials.BILIBILI_COOKIE else "⚠️ 未设置（同步 B 站整个账号需要）" }}</td></tr>
+  </tbody></table></div>
+</article>
+{% endblock %}

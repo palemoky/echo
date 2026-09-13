@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block title %}分析{% endblock %}
+{% block content %}
+<h2>实时分析</h2>
+<p class="muted">粘贴任意 App / 视频链接，实时抓取评论并生成报告，不写入数据库。已跟踪账号的数据报告请到对应 <a href="/accounts">账号页</a> 生成。</p>
+<article>
+  <form hx-post="/jobs/analyze" hx-target="#analyze-jobs" hx-swap="afterbegin">
+    <label>链接<input name="url" type="url" required placeholder="https://www.bilibili.com/video/BV… / https://apps.apple.com/cn/app/…"></label>
+    <div class="inline-fields">
+      <label>抓取条数<input name="limit" type="number" value="200" min="10" max="1000"></label>
+      <label>报告语言<input name="language" value="{{ language }}" placeholder="如 Chinese"></label>
+    </div>
+    {% include "partials/llm_fields.html" %}
+    <button type="submit">开始分析</button>
+  </form>
+</article>
+<div id="analyze-jobs"></div>
+{% endblock %}
